@@ -115,3 +115,4 @@ SA-ключ `sheets-bot@sheet-ai-491412` (путь в `.env`). Без автор
 ## Известные проблемы
 
 - **`invalid_grant`** в календаре (на момент 2026-04-27): отозван `GOOGLE_REFRESH_TOKEN`. Чинится скриптом [`scripts/regenerate-refresh-token.mjs`](scripts/regenerate-refresh-token.mjs). Долгосрочно — перевести OAuth Consent Screen в **Production**-режим (Submit for verification), чтобы токены не истекали через 7 дней.
+
