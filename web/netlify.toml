@@ -4,6 +4,9 @@
 
 [functions]
   node_bundler = "esbuild"
+  # Глобально не бандлим googleapis (слишком большой и ESM-несовместимый при tree-shake esbuild).
+  # Любая функция, импортирующая _lib/google.js, получит googleapis как external (через node_modules).
+  external_node_modules = ["googleapis"]
 
 [functions."invent-view"]
   external_node_modules = ["googleapis"]
