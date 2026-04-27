@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🍬 ПОДБОРЫ — Планшет</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <button id="backBtn" class="back-btn hidden" title="К списку заявок">←</button>
+      🍬 ПОДБОРЫ <span class="muted">/ Планшет · MVP</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="user-chip" id="userChip" title="Пользователь">
+      <span class="user-avatar" id="userAvatar">?</span>
+      <span class="user-name" id="userName">—</span>
+    </div>
+  </header>
+
+  <!-- ============= STATES ============= -->
+
+  <!-- START: list of active заявки -->
+  <section id="startScreen" class="screen-start">
+    <div class="start-controls">
+      <label class="filter-label">
+        <span>Клиент</span>
+        <select id="clientFilter" disabled>
+          <option value="">— все клиенты —</option>
+        </select>
+      </label>
+      <div class="start-stats" id="startStats">—</div>
+    </div>
+    <div id="zayavkiGrid" class="zayavki-grid">
+      <div class="placeholder">Загружаем активные заявки…</div>
+    </div>
+  </section>
+
+  <!-- POLOTNO: working view -->
+  <section id="polotnoScreen" class="screen-polotno hidden">
+    <div class="zayavka-bar" id="zayavkaBar"></div>
+
+    <section class="meta" id="meta">
+      <div class="meta-item"><span class="meta-label">Клиент</span><span class="meta-value" id="m-client">—</span></div>
+      <div class="meta-item"><span class="meta-label">Коробов</span><span class="meta-value" id="m-boxes">0</span></div>
+      <div class="meta-item"><span class="meta-label">SKU в заявке</span><span class="meta-value" id="m-sku">0</span></div>
+      <div class="meta-item"><span class="meta-label">Штук всего</span><span class="meta-value" id="m-qty">0</span></div>
+      <div class="meta-item"><span class="meta-label">Строк</span><span class="meta-value" id="m-lines">0</span></div>
+      <div class="meta-item"><span class="meta-label">Проверено</span><span class="meta-value" id="m-verified">0</span></div>
+      <div class="meta-item"><span class="meta-label">Загрузка</span><span class="meta-value" id="m-ms">—</span></div>
+    </section>
+
+    <main id="canvas" class="canvas">
+      <div class="placeholder">Полотно появится здесь.</div>
+    </main>
+  </section>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upseller — Подборы</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/podbor/style.css">
+</head>
+<body class="auth-hidden">
+  <header class="topbar">
+    <div class="title">
+      <button id="backBtn" class="back-btn hidden" title="К списку заявок">←</button>
+      <a href="/" class="home-link" title="На главную">🏠</a>
+      🍬 ПОДБОРЫ
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="user-chip" id="userChip" title="Пользователь">
+      <span class="user-avatar" id="userAvatar">?</span>
+      <span class="user-name" id="userName">—</span>
+    </div>
+    <button type="button" id="logoutBtn" class="logout-btn" title="Выйти">⎋</button>
+  </header>
+
+  <!-- ============= STATES ============= -->
+
+  <section id="startScreen" class="screen-start">
+    <div class="start-controls">
+      <label class="filter-label">
+        <span>Клиент</span>
+        <select id="clientFilter" disabled>
+          <option value="">— все клиенты —</option>
+        </select>
+      </label>
+      <div class="start-stats" id="startStats">—</div>
+    </div>
+    <div id="zayavkiGrid" class="zayavki-grid">
+      <div class="placeholder">Загружаем активные заявки…</div>
+    </div>
+  </section>
+
+  <section id="polotnoScreen" class="screen-polotno hidden">
+    <div class="zayavka-bar" id="zayavkaBar"></div>
+
+    <section class="meta" id="meta">
+      <div class="meta-item"><span class="meta-label">Клиент</span><span class="meta-value" id="m-client">—</span></div>
+      <div class="meta-item"><span class="meta-label">Коробов</span><span class="meta-value" id="m-boxes">0</span></div>
+      <div class="meta-item"><span class="meta-label">SKU в заявке</span><span class="meta-value" id="m-sku">0</span></div>
+      <div class="meta-item"><span class="meta-label">Штук всего</span><span class="meta-value" id="m-qty">0</span></div>
+      <div class="meta-item"><span class="meta-label">Строк</span><span class="meta-value" id="m-lines">0</span></div>
+      <div class="meta-item"><span class="meta-label">Проверено</span><span class="meta-value" id="m-verified">0</span></div>
+      <div class="meta-item"><span class="meta-label">Загрузка</span><span class="meta-value" id="m-ms">—</span></div>
+    </section>
+
+    <main id="canvas" class="canvas">
+      <div class="placeholder">Полотно появится здесь.</div>
+    </main>
+  </section>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Auth-check identical to landing page; if no session — redirect to /login/ -->
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (!data.user) {
+          location.replace('/login/?next=' + encodeURIComponent(location.pathname));
+          return;
+        }
+        window.__USER__ = data.user;
+        document.body.classList.remove('auth-hidden');
+        // load main app only after auth confirmed
+        const s = document.createElement('script');
+        s.src = '/podbor/app.js';
+        document.body.appendChild(s);
+      } catch (e) {
+        location.replace('/login/');
+      }
+    })();
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.href = '/login/';
+    });
+  </script>
+</body>
+</html>

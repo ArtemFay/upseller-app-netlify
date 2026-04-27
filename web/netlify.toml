@@ -13,6 +13,17 @@
   external_node_modules = ["googleapis"]
   included_files = ["netlify/functions/_lib/invent/**"]
 
+[functions."podbor-zayavki-list"]
+  external_node_modules = ["googleapis"]
+  included_files = ["netlify/functions/_lib/podbor/**"]
+
+[functions."podbor-load"]
+  external_node_modules = ["googleapis"]
+  included_files = ["netlify/functions/_lib/podbor/**"]
+
+[functions."podbor-sync"]
+  included_files = ["netlify/functions/_lib/podbor/**"]
+
 [[redirects]]
   from = "/invent-tablet"
   to = "/.netlify/functions/invent-view"
@@ -21,6 +32,22 @@
 [[redirects]]
   from = "/invent-tablet/"
   to = "/.netlify/functions/invent-view"
+  status = 200
+
+# Подборы: статичный фронт + три функции бэка (zayavki-list / load / sync)
+[[redirects]]
+  from = "/api/podbor/zayavki-list"
+  to = "/.netlify/functions/podbor-zayavki-list"
+  status = 200
+
+[[redirects]]
+  from = "/api/podbor/load"
+  to = "/.netlify/functions/podbor-load"
+  status = 200
+
+[[redirects]]
+  from = "/api/podbor/sync"
+  to = "/.netlify/functions/podbor-sync"
   status = 200
 
 # Специфичные auth-роуты (проверяются первыми)
