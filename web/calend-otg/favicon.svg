@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Календарь отгрузок</title>
+  <!-- Грузовик вид сбоку: красный кузов + белая кабина -->
+  <!-- Тень под машиной -->
+  <ellipse cx="32" cy="55" rx="26" ry="2" fill="#0f172a" opacity="0.15"/>
+
+  <!-- Кузов (красный) -->
+  <rect x="4" y="18" width="34" height="26" rx="1.5" fill="#dc2626" stroke="#7f1d1d" stroke-width="1.5"/>
+  <!-- Дверь кузова (вертикальная линия) -->
+  <line x1="8" y1="22" x2="8" y2="40" stroke="#7f1d1d" stroke-width="1" opacity="0.7"/>
+  <!-- Ручки кузова -->
+  <rect x="6.5" y="30" width="3" height="1.2" fill="#7f1d1d"/>
+  <!-- Горизонтальная полоса на кузове для объёма -->
+  <line x1="4" y1="31" x2="38" y2="31" stroke="#991b1b" stroke-width="0.8" opacity="0.5"/>
+
+  <!-- Кабина -->
+  <path d="M38 24 L48 24 L56 32 L56 44 L38 44 Z" fill="#f1f5f9" stroke="#475569" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Окно кабины -->
+  <path d="M40 27 L47.5 27 L52 31 L40 31 Z" fill="#7dd3fc" stroke="#475569" stroke-width="0.8" stroke-linejoin="round"/>
+  <!-- Ручка кабины -->
+  <rect x="44" y="38" width="3" height="1" fill="#475569"/>
+  <!-- Фара -->
+  <circle cx="54" cy="40" r="1.5" fill="#fde047" stroke="#475569" stroke-width="0.5"/>
+
+  <!-- Колёса -->
+  <circle cx="14" cy="46" r="5.5" fill="#1e293b"/>
+  <circle cx="14" cy="46" r="2" fill="#64748b"/>
+  <circle cx="46" cy="46" r="5.5" fill="#1e293b"/>
+  <circle cx="46" cy="46" r="2" fill="#64748b"/>
+</svg>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body {
+        margin: 0;
+        font: 14px/1.4 Arial, sans-serif;
+        background: linear-gradient(180deg, #eee7db 0%, #f5f1e8 100%);
+        color: #2f2b24;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 18px;
+      }
+      .panel {
+        background: #fffdf8;
+        border: 1px solid #d8cfbe;
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 6px 24px rgba(57, 45, 25, 0.08);
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 14px;
+        border-radius: 10px;
+        text-decoration: none;
+        color: #fff;
+        background: #355c4d;
+      }
+      .muted {
+        color: #6f665b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="panel">
+        <h1>LOG</h1>
+        <p class="muted">Заглушка для будущего просмотра архивных отчётов через web app.</p>
+        <p><a class="button" href="<?= context.returnUrl ?>">Назад к invent</a></p>
+      </div>
+    </div>
+  </body>
+</html>

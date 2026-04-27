@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Админка — Upseller</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/favicon.svg">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --fg: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --card-bg: rgba(30, 41, 59, 0.6);
+      --card-border: rgba(148, 163, 184, 0.2);
+      --danger: #f87171;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(ellipse at top, #1e293b 0%, var(--bg) 70%);
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+    }
+    body.auth-hidden { visibility: hidden; }
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.08);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 999px;
+      text-decoration: none;
+    }
+    .back:hover { color: var(--fg); }
+    .user-badge { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+    .user-badge button {
+      padding: 5px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .user-badge button:hover { color: var(--fg); border-color: rgba(248, 113, 113, 0.5); }
+    h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .lead { color: var(--muted); font-size: 15px; margin-bottom: 28px; }
+    .card {
+      padding: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    input, select {
+      padding: 10px 14px;
+      background: rgba(15, 23, 42, 0.5);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 10px;
+      color: var(--fg);
+      font: inherit;
+      font-size: 14px;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    input { flex: 1; min-width: 220px; }
+    .btn {
+      padding: 10px 18px;
+      background: var(--accent);
+      color: #0c1a2c;
+      border: 0;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:disabled { opacity: 0.5; cursor: wait; }
+    .btn-danger {
+      padding: 6px 12px;
+      background: transparent;
+      color: var(--danger);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-danger:hover { background: rgba(248, 113, 113, 0.1); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      padding: 12px 10px;
+      text-align: left;
+      font-size: 14px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .role {
+      display: inline-block;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-radius: 999px;
+    }
+    .role.admin { color: #fde047; background: rgba(253, 224, 71, 0.12); }
+    .role.user  { color: var(--muted); background: rgba(148, 163, 184, 0.12); }
+    .empty { padding: 20px; text-align: center; color: var(--muted); font-size: 14px; }
+    .toast-wrap { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 100; }
+    .toast { min-width: 220px; max-width: 380px; padding: 10px 14px; border-radius: 10px; font-size: 13px; color: #fff; }
+    .toast.success { background: rgba(22, 163, 74, 0.95); }
+    .toast.error { background: rgba(180, 41, 60, 0.95); }
+  </style>
+</head>
+<body class="auth-hidden">
+  <div class="page">
+    <header>
+      <a href="/" class="back">← Главная</a>
+      <div class="user-badge">
+        <span id="currentUser">...</span>
+        <button id="logoutBtn" type="button">Выйти</button>
+      </div>
+    </header>
+
+    <h1>Пользователи</h1>
+    <p class="lead">Управление списком email, которым разрешён вход через Google.</p>
+
+    <div class="card">
+      <h2>Добавить или изменить пользователя</h2>
+      <form id="userForm" class="form-row">
+        <input type="email" id="emailInput" placeholder="email@example.com" required>
+        <select id="roleSelect">
+          <option value="user">Пользователь</option>
+          <option value="admin">Администратор</option>
+        </select>
+        <button type="submit" class="btn">Сохранить</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Текущий список</h2>
+      <div id="tableContainer">
+        <div class="empty">Загрузка...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toasts"></div>
+
+  <script>
+    const tableContainer = document.getElementById('tableContainer');
+    const form = document.getElementById('userForm');
+    const emailInput = document.getElementById('emailInput');
+    const roleSelect = document.getElementById('roleSelect');
+    const toastWrap = document.getElementById('toasts');
+    let currentUser = null;
+
+    function toast(message, type) {
+      const node = document.createElement('div');
+      node.className = 'toast ' + (type || '');
+      node.textContent = message;
+      toastWrap.appendChild(node);
+      setTimeout(() => node.remove(), 2800);
+    }
+
+    async function checkAuth() {
+      const res = await fetch('/api/auth/me');
+      const data = await res.json();
+      if (!data.user) {
+        location.href = '/login/?next=' + encodeURIComponent('/admin/');
+        return null;
+      }
+      if (data.user.role !== 'admin') {
+        document.body.innerHTML = '<div class="page"><a href="/" class="back">← Главная</a><h1 style="margin-top:24px">Нет доступа</h1><p class="lead">Эта страница только для администраторов.</p></div>';
+        document.body.classList.remove('auth-hidden');
+        return null;
+      }
+      return data.user;
+    }
+
+    async function loadUsers() {
+      const res = await fetch('/api/users');
+      const data = await res.json();
+      if (!res.ok) {
+        tableContainer.innerHTML = '<div class="empty">Ошибка: ' + (data.error || res.status) + '</div>';
+        return;
+      }
+      renderTable(data.users || []);
+    }
+
+    function renderTable(users) {
+      if (!users.length) {
+        tableContainer.innerHTML = '<div class="empty">Пользователей нет.</div>';
+        return;
+      }
+      const rows = users.map(u => {
+        const date = u.createdAt ? new Date(u.createdAt).toLocaleDateString('ru-RU') : '—';
+        const isSelf = u.email === currentUser.email;
+        return '<tr>'
+          + '<td>' + escapeHtml(u.email) + '</td>'
+          + '<td><span class="role ' + u.role + '">' + (u.role === 'admin' ? 'админ' : 'пользователь') + '</span></td>'
+          + '<td>' + escapeHtml(date) + '</td>'
+          + '<td style="text-align:right">' + (isSelf ? '<span style="color:var(--muted);font-size:12px">это вы</span>' : '<button class="btn-danger" data-email="' + escapeHtml(u.email) + '">удалить</button>') + '</td>'
+          + '</tr>';
+      }).join('');
+      tableContainer.innerHTML = '<table><thead><tr><th>Email</th><th>Роль</th><th>Добавлен</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+
+      tableContainer.querySelectorAll('button[data-email]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const email = btn.dataset.email;
+          if (!confirm('Удалить ' + email + ' из списка разрешённых?')) return;
+          btn.disabled = true;
+          const res = await fetch('/api/users', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            toast(data.error || 'Ошибка удаления', 'error');
+            btn.disabled = false;
+            return;
+          }
+          toast('Удалён: ' + email, 'success');
+          loadUsers();
+        });
+      });
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      const role = roleSelect.value;
+      if (!email) return;
+      const submitBtn = form.querySelector('button[type=submit]');
+      submitBtn.disabled = true;
+      try {
+        const res = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, role }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        toast('Сохранён: ' + email, 'success');
+        emailInput.value = '';
+        roleSelect.value = 'user';
+        loadUsers();
+      } catch (err) {
+        toast(err.message || 'Ошибка', 'error');
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.href = '/login/';
+    });
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    (async () => {
+      currentUser = await checkAuth();
+      if (!currentUser) return;
+      document.getElementById('currentUser').textContent = currentUser.email;
+      document.body.classList.remove('auth-hidden');
+      loadUsers();
+    })();
+  </script>
+</body>
+</html>

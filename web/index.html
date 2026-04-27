@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upseller — главная</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/favicon.svg">
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-2: #1e293b;
+      --fg: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --card-bg: rgba(30, 41, 59, 0.6);
+      --card-border: rgba(148, 163, 184, 0.15);
+      --card-hover: rgba(56, 189, 248, 0.5);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(ellipse at top, #1e293b 0%, var(--bg) 70%);
+      color: var(--fg);
+      -webkit-font-smoothing: antialiased;
+    }
+    body.auth-hidden { visibility: hidden; }
+    .topbar {
+      position: absolute;
+      top: 20px;
+      right: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .topbar a, .topbar button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.08);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 999px;
+      text-decoration: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .topbar a:hover, .topbar button:hover { color: var(--fg); border-color: rgba(56, 189, 248, 0.4); }
+    .topbar .email { padding-right: 4px; }
+    .page {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 64px 24px 80px;
+    }
+    header {
+      margin-bottom: 48px;
+      text-align: center;
+    }
+    .brand {
+      display: inline-block;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 999px;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+    }
+    h1 {
+      font-size: clamp(36px, 6vw, 56px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--fg) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .subtitle {
+      font-size: 17px;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .tile {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      padding: 28px 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.18s ease;
+      min-height: 180px;
+      backdrop-filter: blur(6px);
+    }
+    .tile.active:hover {
+      border-color: var(--card-hover);
+      background: rgba(30, 41, 59, 0.9);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+    .tile.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .tile-icon {
+      font-size: 36px;
+      line-height: 1;
+      margin-bottom: 16px;
+    }
+    .tile-title {
+      font-size: 19px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+    .tile-desc {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .tile-badge {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-radius: 999px;
+    }
+    .tile-badge.soon {
+      color: var(--muted);
+      background: rgba(148, 163, 184, 0.12);
+    }
+    .tile-badge.live {
+      color: #22c55e;
+      background: rgba(34, 197, 94, 0.15);
+    }
+    footer {
+      margin-top: 64px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      opacity: 0.7;
+    }
+    @media (max-width: 640px) {
+      .topbar { top: 14px; right: 14px; }
+      .topbar .email { display: none; }
+    }
+  </style>
+</head>
+<body class="auth-hidden">
+  <div class="topbar" id="topbar">
+    <span class="email" id="currentUser"></span>
+    <a href="/admin/" id="adminLink" style="display:none">Админка</a>
+    <button type="button" id="logoutBtn">Выйти</button>
+  </div>
+
+  <div class="page">
+    <header>
+      <span class="brand">Upseller</span>
+      <h1>Рабочие инструменты</h1>
+      <p class="subtitle">Выберите модуль. Данные синхронизируются с исходными Google-таблицами.</p>
+    </header>
+
+    <div class="grid">
+      <a href="/calend-otg/" class="tile active">
+        <span class="tile-badge live">активно</span>
+        <div class="tile-icon">🚚</div>
+        <div class="tile-title">Календарь отгрузок</div>
+        <div class="tile-desc">Отгрузки по датам, статусы, водители, авто, ОТК.</div>
+      </a>
+
+      <a href="/invent-tablet/" class="tile active">
+        <span class="tile-badge live">активно</span>
+        <div class="tile-icon">📋</div>
+        <div class="tile-title">ИНВЕНТ ПЛАНШЕТ</div>
+        <div class="tile-desc">Заявки, короба, проверка, правки и проведение invent внутри Upseller.</div>
+      </a>
+
+      <div class="tile disabled">
+        <span class="tile-badge soon">скоро</span>
+        <div class="tile-icon">📦</div>
+        <div class="tile-title">Склад</div>
+        <div class="tile-desc">Остатки, поступления, инвентаризация.</div>
+      </div>
+
+      <div class="tile disabled">
+        <span class="tile-badge soon">скоро</span>
+        <div class="tile-icon">📊</div>
+        <div class="tile-title">Финансы</div>
+        <div class="tile-desc">Расходы, аналитика, отчёты по периодам.</div>
+      </div>
+    </div>
+
+    <footer>v0.2 — Upseller рабочие инструменты (с авторизацией)</footer>
+  </div>
+
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (!data.user) {
+          location.replace('/login/?next=' + encodeURIComponent(location.pathname));
+          return;
+        }
+        document.getElementById('currentUser').textContent = data.user.email;
+        if (data.user.role === 'admin') {
+          document.getElementById('adminLink').style.display = 'inline-flex';
+        }
+        document.body.classList.remove('auth-hidden');
+      } catch (e) {
+        location.replace('/login/');
+      }
+    })();
+
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.href = '/login/';
+    });
+  </script>
+</body>
+</html>

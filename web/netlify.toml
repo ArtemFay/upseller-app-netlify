@@ -1,0 +1,46 @@
+[build]
+  functions = "netlify/functions"
+  publish = "."
+
+[functions]
+  node_bundler = "esbuild"
+
+[functions."invent-view"]
+  external_node_modules = ["googleapis"]
+  included_files = ["netlify/functions/_lib/invent/**"]
+
+[functions."invent-run"]
+  external_node_modules = ["googleapis"]
+  included_files = ["netlify/functions/_lib/invent/**"]
+
+[[redirects]]
+  from = "/invent-tablet"
+  to = "/.netlify/functions/invent-view"
+  status = 200
+
+[[redirects]]
+  from = "/invent-tablet/"
+  to = "/.netlify/functions/invent-view"
+  status = 200
+
+# Специфичные auth-роуты (проверяются первыми)
+[[redirects]]
+  from = "/api/auth/login"
+  to = "/.netlify/functions/auth-login"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/logout"
+  to = "/.netlify/functions/auth-logout"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/me"
+  to = "/.netlify/functions/auth-me"
+  status = 200
+
+# Общий fallback для остальных /api/*
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200

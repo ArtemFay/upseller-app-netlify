@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      :root {
+        --bg: #f5f1e8;
+        --panel: #fffdf8;
+        --line: #d8cfbe;
+        --text: #2f2b24;
+        --muted: #6f665b;
+        --accent: #355c4d;
+        --danger: #9a3f3f;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.35 Arial, sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, #eee7db 0%, var(--bg) 100%);
+      }
+
+      .wrap {
+        padding: 16px;
+        display: grid;
+        gap: 14px;
+        max-width: 1120px;
+        margin: 0 auto;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 6px 24px rgba(57, 45, 25, 0.08);
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .fact-grid {
+        display: grid;
+        grid-template-columns: minmax(150px, 1.1fr) minmax(116px, 0.72fr) minmax(116px, 0.72fr);
+        gap: 10px;
+        align-items: end;
+      }
+
+      .fact-grid-secondary {
+        display: grid;
+        grid-template-columns: minmax(78px, 0.55fr) minmax(82px, 0.62fr) minmax(78px, 0.48fr) minmax(78px, 0.48fr);
+        gap: 10px;
+        align-items: end;
+      }
+
+      .field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .field label,
+      .mini {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .required {
+        color: var(--danger);
+        font-weight: 700;
+        margin-left: 2px;
+      }
+
+      input, select, textarea, button {
+        font: inherit;
+      }
+
+      input, select, textarea {
+        width: 100%;
+        border: 1px solid #c9bfaf;
+        border-radius: 10px;
+        background: #fff;
+        padding: 9px 10px;
+        color: var(--text);
+      }
+
+      input[readonly] {
+        background: #f2eee7;
+      }
+
+      textarea {
+        min-height: 72px;
+        resize: vertical;
+      }
+
+      .items {
+        display: grid;
+        gap: 12px;
+      }
+
+      .items-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+        flex-wrap: wrap;
+      }
+
+      .item-row {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        background: #fff;
+        display: grid;
+        gap: 10px;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+
+      .item-row.valid {
+        background: #eef8eb;
+        border-color: #9fc796;
+      }
+
+      .item-row.invalid {
+        background: #fff1f1;
+        border-color: #e09a9a;
+      }
+
+      .item-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .sku-title {
+        font-weight: 700;
+        font-size: 16px;
+      }
+
+      .sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .item-grid {
+        display: grid;
+        grid-template-columns: minmax(132px, 0.95fr) 84px minmax(180px, 1.8fr);
+        gap: 10px;
+        align-items: end;
+      }
+
+      .item-grid .item-note-preview {
+        display: flex;
+        align-items: center;
+        min-height: 40px;
+        padding: 9px 10px;
+        border: 1px solid #c9bfaf;
+        border-radius: 10px;
+        background: #faf7f0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .btn-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        cursor: pointer;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: #fff;
+        font-weight: 700;
+      }
+
+      .secondary {
+        background: #e7e0d2;
+        color: var(--text);
+      }
+
+      .error {
+        color: var(--danger);
+        font-size: 13px;
+        min-height: 18px;
+      }
+
+      .error.top {
+        margin-top: 6px;
+      }
+
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .field.invalid input,
+      .field.invalid select,
+      .field.invalid textarea {
+        border-color: #d77c7c;
+        background: #fff3f3;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 253, 248, 0.88);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        z-index: 1000;
+      }
+
+      .overlay.visible {
+        display: flex;
+      }
+
+      .overlay-card {
+        width: min(560px, 100%);
+        background: #fffdf8;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 22px 20px;
+        box-shadow: 0 10px 36px rgba(57, 45, 25, 0.14);
+        display: grid;
+        gap: 14px;
+        text-align: center;
+      }
+
+      .overlay-title {
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .overlay-text {
+        font-size: 13px;
+        color: var(--muted);
+        white-space: pre-line;
+      }
+
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 4px solid #e6dece;
+        border-top-color: var(--accent);
+        margin: 0 auto;
+        animation: spin 0.9s linear infinite;
+      }
+
+      .success-icon {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        background: #e3efe8;
+        color: var(--accent);
+        margin: 0 auto;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .overlay.success .spinner {
+        display: none;
+      }
+
+      .overlay.success .success-icon {
+        display: flex;
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      @media (max-width: 760px) {
+        .fact-grid,
+        .fact-grid-secondary,
+        .item-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 560px) {
+        body {
+          font-size: 13px;
+        }
+
+        .wrap {
+          padding: 10px;
+        }
+
+        .panel {
+          padding: 12px;
+          border-radius: 12px;
+        }
+
+        .topbar,
+        .items-header,
+        .item-head {
+          align-items: stretch;
+        }
+
+        .actions {
+          width: 100%;
+        }
+
+        .actions button {
+          flex: 1 1 0;
+        }
+
+        .fact-grid,
+        .fact-grid-secondary,
+        .item-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="savingOverlay" class="overlay" aria-live="polite">
+      <div class="overlay-card">
+        <div class="spinner"></div>
+        <div class="success-icon">✓</div>
+        <div id="overlayTitle" class="overlay-title">Сохранение данных</div>
+        <div id="overlayText" class="overlay-text"></div>
+      </div>
+    </div>
+    <div class="wrap">
+      <div class="panel">
+        <div class="topbar">
+          <h1 class="title" id="formTitle">Редактирование короба</h1>
+          <div class="actions">
+            <button class="secondary" type="button" onclick="closeForm()">Отмена</button>
+            <button class="primary" id="saveButton" type="button" onclick="save()">Сохранить</button>
+          </div>
+        </div>
+        <div id="error" class="error top"></div>
+        <div class="fact-grid">
+          <div class="field">
+            <label id="boxNumberLabel">Короб</label>
+            <input id="boxNumber" readonly>
+          </div>
+          <div class="field">
+            <label>Тип товара<span class="required">*</span></label>
+            <select id="boxType"></select>
+          </div>
+          <div class="field">
+            <label>Статус<span class="required">*</span></label>
+            <select id="boxStatus"></select>
+          </div>
+        </div>
+        <div class="fact-grid-secondary" style="margin-top:10px;">
+          <div class="field">
+            <label>Тара<span class="required">*</span></label>
+            <input id="boxTara" list="taraOptionsList">
+            <datalist id="taraOptionsList"></datalist>
+          </div>
+          <div class="field">
+            <label>Адрес</label>
+            <input id="boxAddress">
+          </div>
+          <div class="field">
+            <label>Количество SKU</label>
+            <input id="boxSkuCount" readonly>
+          </div>
+          <div class="field">
+            <label>Всего в коробе</label>
+            <input id="boxTotalQty" readonly>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="field">
+          <label>Пояснение для короба</label>
+          <textarea id="boxNote" placeholder="Например: переведен в статус ГОТОВО после проверки содержимого"></textarea>
+          <div class="hint">Для нового короба не обязательно. При редактировании изменений должно содержать новое пояснение.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="items-header">
+          <div>
+            <h2 class="title" style="font-size:17px; margin-bottom:4px;">Содержание короба</h2>
+            <div class="hint">Для отсутствующего товара ставь количество 0. Новый баркод добавляется отдельным блоком.</div>
+          </div>
+          <button class="secondary" type="button" onclick="addNewItem()">Добавить баркод</button>
+        </div>
+        <div id="items" class="items"></div>
+      </div>
+    </div>
+
+    <script>
+      const data = <?!= JSON.stringify(payload) ?>;
+      const context = <?!= JSON.stringify(typeof context === 'undefined' ? { isWebApp: false, returnUrl: '' } : context) ?>;
+      let items = [];
+      let newItemCounter = 0;
+      let isSaving = false;
+      const originalBoxNote = (data.box && data.box.note) ? String(data.box.note).trim() : '';
+
+      function init() {
+        document.getElementById('boxNumber').value = data.box.boxNumber || '';
+        configureBoxField();
+        fillSelect('boxType', data.typeOptions, data.box.type || '');
+        // Populate tara datalist
+        const taraList = document.getElementById('taraOptionsList');
+        (data.taraOptions || []).forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v;
+          taraList.appendChild(opt);
+        });
+        document.getElementById('boxTara').value = data.box.tara || '';
+        document.getElementById('boxAddress').value = data.box.address || '';
+        document.getElementById('boxSkuCount').value = data.box.skuCount || 0;
+        document.getElementById('boxTotalQty').value = data.box.totalQty || 0;
+        document.getElementById('boxNote').value = data.box.note || '';
+        fillSelect('boxStatus', data.statusOptions, data.box.status || '');
+        document.getElementById('boxType').addEventListener('change', () => renderItems());
+        ['boxType', 'boxStatus', 'boxTara', 'boxAddress', 'boxNote', 'boxNumber'].forEach(id => {
+          const node = document.getElementById(id);
+          if (!node) return;
+          node.addEventListener('input', updateValidationState);
+          node.addEventListener('change', updateValidationState);
+        });
+
+        items = data.items.map(item => ({
+          key: `row-${item.rowNumber}`,
+          rowNumber: item.rowNumber,
+          barcode: item.barcode,
+          qty: item.qty,
+          sku: item.sku || '',
+          isNew: false
+        }));
+
+        if (data.isNewBox && items.length === 0) {
+          addNewItem();
+          return;
+        }
+
+        renderItems();
+        updateValidationState();
+      }
+
+      let boxNumberExists = false;
+      let boxNumberCheckTimer = null;
+      const BOX_PREFIX = (context && context.chernSheetName) || 'I0000';
+
+      function configureBoxField() {
+        const boxInput = document.getElementById('boxNumber');
+        const boxLabel = document.getElementById('boxNumberLabel');
+        const title = document.getElementById('formTitle');
+
+        if (data.isNewBox) {
+          title.textContent = 'Создание нового короба';
+          boxLabel.textContent = 'Номер нового короба: ' + BOX_PREFIX + '-000';
+          boxInput.readOnly = false;
+          boxInput.placeholder = 'Введи номер от 1 до 999';
+          boxInput.value = data.box.shortNumber || '';
+
+          boxInput.addEventListener('input', handleBoxNumberInput);
+          updateBoxNumberPreview();
+        } else {
+          title.textContent = 'Редактирование короба';
+          boxLabel.textContent = 'Короб';
+          boxInput.readOnly = true;
+        }
+      }
+
+      function handleBoxNumberInput() {
+        updateBoxNumberPreview();
+
+        if (boxNumberCheckTimer) clearTimeout(boxNumberCheckTimer);
+        boxNumberCheckTimer = setTimeout(checkBoxNumberUnique, 500);
+      }
+
+      function updateBoxNumberPreview() {
+        const boxInput = document.getElementById('boxNumber');
+        const boxLabel = document.getElementById('boxNumberLabel');
+        const value = boxInput.value.trim();
+
+        if (!value) {
+          boxLabel.textContent = 'Номер нового короба: ' + BOX_PREFIX + '-000';
+          return;
+        }
+
+        const num = parseInt(value, 10);
+        if (!Number.isFinite(num) || num < 1 || num > 999) {
+          boxLabel.textContent = 'Номер нового короба: ' + BOX_PREFIX + '-000';
+          return;
+        }
+
+        const formatted = BOX_PREFIX + '-' + String(num).padStart(3, '0');
+        boxLabel.textContent = `Номер нового короба: ${formatted}`;
+      }
+
+      function checkBoxNumberUnique() {
+        const boxInput = document.getElementById('boxNumber');
+        const value = boxInput.value.trim();
+
+        if (!value) {
+          boxNumberExists = false;
+          updateValidationState();
+          return;
+        }
+
+        const num = parseInt(value, 10);
+        if (!Number.isFinite(num) || num < 1 || num > 999) {
+          boxNumberExists = false;
+          updateValidationState();
+          return;
+        }
+
+        const formatted = BOX_PREFIX + '-' + String(num).padStart(3, '0');
+
+        google.script.run
+          .withSuccessHandler(exists => {
+            boxNumberExists = exists;
+            updateValidationState();
+          })
+          .withFailureHandler(() => {
+            boxNumberExists = false;
+            updateValidationState();
+          })
+          .checkBoxNumberExists(formatted);
+      }
+
+      function renderItems() {
+        const container = document.getElementById('items');
+        container.innerHTML = '';
+        const validation = getValidationState();
+
+        items.forEach(item => {
+          const row = document.createElement('div');
+          const itemValidation = validation.itemStates[item.key] || { state: 'neutral' };
+          row.className = `item-row ${itemValidation.state === 'valid' ? 'valid' : itemValidation.state === 'invalid' ? 'invalid' : ''}`.trim();
+
+          const title = item.sku || (item.isNew ? 'Новый SKU' : 'Без SKU');
+
+          row.innerHTML = `
+            <div class="item-head">
+              <div>
+                <div class="sku-title">${escapeHtml(title)}</div>
+              </div>
+              <div class="sub">${item.isNew ? 'новый баркод' : ''}</div>
+            </div>
+            <div class="item-grid">
+              <div class="field ${itemValidation.barcodeInvalid ? 'invalid' : ''}">${item.isNew ? renderBarcodeSelect(item) : `<label>Баркод</label><input readonly value="${escapeHtml(item.barcode)}">`}</div>
+              <div class="field ${itemValidation.qtyInvalid ? 'invalid' : ''}">
+                <label>Количество<span class="required">*</span></label>
+                <input type="number" min="0" step="1" value="${item.qty}" onchange="updateItemQty('${item.key}', this.value)">
+              </div>
+              <div class="field">
+                <label>Состояние</label>
+                <div class="item-note-preview">${escapeHtml(itemValidation.message || 'Заполни данные для баркода')}</div>
+              </div>
+            </div>
+          `;
+
+          container.appendChild(row);
+        });
+
+        updateSummaryPreview();
+      }
+
+      function renderBarcodeSelect(item) {
+        const currentType = document.getElementById('boxType') ? document.getElementById('boxType').value : (data.box.type || '');
+        const busy = new Set(items.filter(entry => entry.key !== item.key).map(entry => entry.barcode).filter(Boolean));
+        const options = ['<option value="">Выбери баркод</option>']
+          .concat(data.barcodeOptions
+            .filter(opt => opt.type === currentType)
+            .filter(opt => !busy.has(opt.barcode))
+            .map(opt => {
+            const selected = opt.barcode === item.barcode ? 'selected' : '';
+            const text = `${opt.barcode} | ${opt.sku || opt.type || ''}`;
+            return `<option value="${escapeHtml(opt.barcode)}" ${selected}>${escapeHtml(text)}</option>`;
+          }));
+
+        return `
+          <label>Баркод</label>
+          <select onchange="updateItemBarcode('${item.key}', this.value)">
+            ${options.join('')}
+          </select>
+        `;
+      }
+
+      function updateItemQty(key, value) {
+        const item = items.find(entry => entry.key === key);
+        if (!item) return;
+        item.qty = value === '' ? '' : Number(value);
+        updateSummaryPreview();
+        updateValidationState();
+      }
+
+      function updateItemBarcode(key, barcode) {
+        const item = items.find(entry => entry.key === key);
+        if (!item) return;
+        item.barcode = barcode;
+        const ref = data.barcodeOptions.find(opt => opt.barcode === barcode);
+        item.sku = ref ? ref.sku : '';
+        renderItems();
+        updateValidationState();
+      }
+
+      function addNewItem() {
+        newItemCounter += 1;
+        items.push({
+          key: `new-${newItemCounter}`,
+          rowNumber: null,
+          barcode: '',
+          qty: 1,
+          sku: '',
+          isNew: true
+        });
+        renderItems();
+        updateValidationState();
+      }
+
+      function updateSummaryPreview() {
+        const activeItems = items.filter(item => item.barcode && Number(item.qty) > 0);
+        const skuCount = new Set(activeItems.map(item => item.barcode)).size;
+        const totalQty = activeItems.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+        document.getElementById('boxSkuCount').value = skuCount;
+        document.getElementById('boxTotalQty').value = totalQty;
+      }
+
+      function validate() {
+        return getValidationState();
+      }
+
+      function getValidationState() {
+        const errors = [];
+        const itemStates = {};
+        const boxType = document.getElementById('boxType').value.trim();
+        const boxStatus = document.getElementById('boxStatus').value.trim();
+        const boxTara = document.getElementById('boxTara').value.trim();
+        const boxAddress = document.getElementById('boxAddress').value.trim();
+        const boxNote = document.getElementById('boxNote').value.trim();
+
+        if (data.isNewBox) {
+          const rawNumber = document.getElementById('boxNumber').value.trim();
+          if (!/^\d{1,3}$/.test(rawNumber)) {
+            errors.push('Для нового короба укажи номер от 1 до 999.');
+          } else if (boxNumberExists) {
+            errors.push('Короб с таким номером уже существует. Выбери другой номер или отредактируй существующий.');
+          }
+        }
+
+        if (!boxType) errors.push('Укажи тип товара.');
+        if (!boxStatus) errors.push('Укажи статус короба.');
+        if (!boxTara) errors.push('Укажи тару.');
+
+        const statusChanged = boxStatus !== data.box.status;
+        const typeChanged = boxType !== (data.box.type || '');
+        const taraChanged = boxTara !== (data.box.tara || '');
+        const addressChanged = boxAddress !== (data.box.address || '');
+        let hasItemChanges = false;
+
+        const barcodeSet = new Set();
+        let activeItems = 0;
+
+        for (const item of items) {
+          const state = { state: 'neutral', message: '', barcodeInvalid: false, qtyInvalid: false };
+          const isBlankNew = item.isNew && !item.barcode;
+
+          if (isBlankNew) {
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (!item.barcode) {
+            state.state = 'invalid';
+            state.barcodeInvalid = true;
+            state.message = 'Нужно выбрать баркод.';
+            errors.push('Для нового блока нужно выбрать баркод.');
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (barcodeSet.has(item.barcode)) {
+            state.state = 'invalid';
+            state.barcodeInvalid = true;
+            state.message = `Баркод ${item.barcode} повторяется.`;
+            errors.push(`Баркод ${item.barcode} повторяется в форме.`);
+            itemStates[item.key] = state;
+            continue;
+          }
+          barcodeSet.add(item.barcode);
+
+          if (item.qty === '' || item.qty === null || Number.isNaN(Number(item.qty)) || Number(item.qty) < 0) {
+            state.state = 'invalid';
+            state.qtyInvalid = true;
+            state.message = 'Количество указано некорректно.';
+            errors.push(`Для баркода ${item.barcode} укажи корректное количество.`);
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (item.isNew && Number(item.qty) <= 0) {
+            state.state = 'invalid';
+            state.qtyInvalid = true;
+            state.message = 'Для нового баркода количество должно быть больше нуля.';
+            errors.push(`Для нового баркода ${item.barcode} количество должно быть больше нуля.`);
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (Number(item.qty) > 0) {
+            activeItems += 1;
+          }
+
+          const original = data.items.find(src => src.rowNumber === item.rowNumber);
+          if (item.isNew || (original && Number(original.qty) !== Number(item.qty))) {
+            hasItemChanges = true;
+          }
+
+          state.state = 'valid';
+          state.message = item.isNew
+            ? `Новый баркод будет добавлен с количеством ${item.qty}.`
+            : `Баркод заполнен корректно.`;
+          itemStates[item.key] = state;
+        }
+
+        if (data.isNewBox && activeItems === 0) {
+          errors.push('Для нового короба добавь хотя бы один баркод с количеством больше нуля.');
+        }
+
+        const hasMeaningfulChanges = statusChanged || typeChanged || taraChanged || addressChanged || hasItemChanges;
+        if (!data.isNewBox && hasMeaningfulChanges && !boxNote) {
+          errors.push('Для сохранения изменений добавь новое пояснение для короба.');
+        }
+        if (!data.isNewBox && hasMeaningfulChanges && boxNote === originalBoxNote) {
+          errors.push('Пояснение не изменилось. Добавь новую информацию к текущему изменению.');
+        }
+
+        const boxNumberInvalid = data.isNewBox && (
+          !/^\d{1,3}$/.test(document.getElementById('boxNumber').value.trim()) || boxNumberExists
+        );
+
+        return {
+          ok: errors.length === 0,
+          errors,
+          itemStates,
+          boxState: {
+            boxNumberInvalid,
+            typeInvalid: !boxType,
+            statusInvalid: !boxStatus,
+            taraInvalid: !boxTara,
+            noteInvalid: !data.isNewBox && hasMeaningfulChanges && (!boxNote || boxNote === originalBoxNote)
+          }
+        };
+      }
+
+      function updateValidationState() {
+        const validation = getValidationState();
+        renderFieldState('boxNumber', validation.boxState.boxNumberInvalid);
+        renderFieldState('boxType', validation.boxState.typeInvalid);
+        renderFieldState('boxStatus', validation.boxState.statusInvalid);
+        renderFieldState('boxTara', validation.boxState.taraInvalid);
+        renderFieldState('boxNote', validation.boxState.noteInvalid);
+
+        const errorNode = document.getElementById('error');
+        errorNode.textContent = validation.errors[0] || '';
+
+        const saveButton = document.getElementById('saveButton');
+        saveButton.disabled = !validation.ok || isSaving;
+        saveButton.style.opacity = (!validation.ok || isSaving) ? '0.55' : '1';
+        saveButton.style.cursor = (!validation.ok || isSaving) ? 'not-allowed' : 'pointer';
+
+        renderItemsWithValidation(validation);
+      }
+
+      function renderItemsWithValidation(validation) {
+        const container = document.getElementById('items');
+        const cards = container.querySelectorAll('.item-row');
+        cards.forEach((card, index) => {
+          const item = items[index];
+          if (!item) return;
+          const itemValidation = validation.itemStates[item.key] || { state: 'neutral' };
+          card.classList.remove('valid', 'invalid');
+          if (itemValidation.state === 'valid') card.classList.add('valid');
+          if (itemValidation.state === 'invalid') card.classList.add('invalid');
+        });
+      }
+
+      function renderFieldState(id, invalid) {
+        const node = document.getElementById(id);
+        if (!node || !node.parentElement) return;
+        node.parentElement.classList.toggle('invalid', Boolean(invalid));
+      }
+
+      function save() {
+        if (isSaving) return;
+        const validation = validate();
+        const errorNode = document.getElementById('error');
+        if (!validation.ok) {
+          errorNode.textContent = validation.errors[0] || 'Проверь корректность заполнения формы.';
+          errorNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+
+        errorNode.textContent = '';
+
+        const payload = {
+          isNewBox: data.isNewBox === true,
+          box: {
+            boxNumber: data.isNewBox ? '' : data.box.boxNumber,
+            shortNumber: data.isNewBox ? document.getElementById('boxNumber').value.trim() : '',
+            type: document.getElementById('boxType').value,
+            status: document.getElementById('boxStatus').value,
+            tara: document.getElementById('boxTara').value.trim(),
+            address: document.getElementById('boxAddress').value.trim()
+          },
+          boxNote: document.getElementById('boxNote').value.trim(),
+          items: items.map(item => ({
+            rowNumber: item.rowNumber,
+            barcode: item.barcode,
+            qty: item.qty
+          })).filter(item => item.barcode)
+        };
+
+        isSaving = true;
+        updateValidationState();
+        showSavingOverlay(buildSaveSummary(payload));
+
+        google.script.run
+          .withSuccessHandler(result => {
+            showSaveSuccess(result && result.message ? result.message : 'Данные успешно сохранены.');
+            setTimeout(() => closeForm(), 900);
+          })
+          .withFailureHandler(err => {
+            isSaving = false;
+            hideSavingOverlay();
+            errorNode.textContent = err && err.message ? err.message : String(err);
+            updateValidationState();
+          })
+          .saveBoxEditorChanges(payload);
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function fillSelect(id, options, selectedValue) {
+        const select = document.getElementById(id);
+        select.innerHTML = '';
+        options.forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          if (value === selectedValue) option.selected = true;
+          select.appendChild(option);
+        });
+
+        if (selectedValue && !options.includes(selectedValue)) {
+          const option = document.createElement('option');
+          option.value = selectedValue;
+          option.textContent = selectedValue;
+          option.selected = true;
+          select.appendChild(option);
+        }
+      }
+
+      function showSavingOverlay(text) {
+        const overlay = document.getElementById('savingOverlay');
+        overlay.classList.remove('success');
+        overlay.classList.add('visible');
+        document.getElementById('overlayTitle').textContent = 'Сохранение данных';
+        document.getElementById('overlayText').textContent = text;
+      }
+
+      function showSaveSuccess(message) {
+        const overlay = document.getElementById('savingOverlay');
+        overlay.classList.add('visible', 'success');
+        document.getElementById('overlayTitle').textContent = 'Данные успешно сохранены';
+        document.getElementById('overlayText').textContent = message;
+      }
+
+      function hideSavingOverlay() {
+        const overlay = document.getElementById('savingOverlay');
+        overlay.classList.remove('visible', 'success');
+      }
+
+      function buildSaveSummary(payload) {
+        const lines = [];
+        if (payload.isNewBox) {
+          lines.push(`Создание нового короба ${payload.box.shortNumber || ''}`.trim());
+        } else {
+          lines.push(`Сохранение изменений по коробу ${payload.box.boxNumber}`);
+        }
+
+        const originalItems = new Map((data.items || []).map(item => [item.rowNumber, item]));
+        const added = payload.items.filter(item => !item.rowNumber).length;
+        const qtyChanged = payload.items.filter(item => {
+          if (!item.rowNumber) return false;
+          const original = originalItems.get(item.rowNumber);
+          return original && Number(original.qty) !== Number(item.qty);
+        }).length;
+
+        const boxChanges = [];
+        if (!payload.isNewBox) {
+          if (payload.box.type !== (data.box.type || '')) boxChanges.push('тип товара');
+          if (payload.box.status !== (data.box.status || '')) boxChanges.push('статус');
+          if (payload.box.tara !== (data.box.tara || '')) boxChanges.push('тара');
+          if (payload.box.address !== (data.box.address || '')) boxChanges.push('адрес');
+        }
+
+        if (boxChanges.length) lines.push(`Параметры короба: ${boxChanges.join(', ')}`);
+        if (qtyChanged > 0) lines.push(`Изменено количеств: ${qtyChanged}`);
+        if (added > 0) lines.push(`Добавлено новых баркодов: ${added}`);
+        if (payload.isNewBox) lines.push('Строки будут сразу помечены как проверенные.');
+
+        return lines.join('\n');
+      }
+
+      function closeForm() {
+        if (context && context.isWebApp && context.returnUrl) {
+          if (window.top) {
+            window.top.location.href = context.returnUrl;
+            return;
+          }
+          window.location.href = context.returnUrl;
+          return;
+        }
+        google.script.host.close();
+      }
+      init();
+    </script>
+  </body>
+</html>

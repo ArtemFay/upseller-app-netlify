@@ -1,0 +1,11 @@
+# Local dependencies and build output
+node_modules/
+.netlify/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Logs
+*.log

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Upseller</title>
+  <!-- Коробка: изометрический вид -->
+  <!-- Передняя грань -->
+  <path d="M8 26 L32 34 L32 60 L8 52 Z" fill="#c8955d" stroke="#5a3918" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Правая грань -->
+  <path d="M32 34 L56 26 L56 52 L32 60 Z" fill="#a67244" stroke="#5a3918" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Верхняя грань (крышка закрыта) -->
+  <path d="M8 26 L32 18 L56 26 L32 34 Z" fill="#d9a76d" stroke="#5a3918" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Шов крышки -->
+  <line x1="32" y1="18" x2="32" y2="34" stroke="#5a3918" stroke-width="1"/>
+  <!-- Горизонтальная лента (перевязка) -->
+  <path d="M8 38 L32 46 L56 38" fill="none" stroke="#6b4423" stroke-width="1.5" opacity="0.6"/>
+  <!-- Вертикальная лента передней грани -->
+  <line x1="20" y1="30" x2="20" y2="56" stroke="#6b4423" stroke-width="1.2" opacity="0.5"/>
+</svg>

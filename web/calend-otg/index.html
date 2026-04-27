@@ -1,0 +1,2117 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <title>Календарь отгрузок — Upseller</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet">
+    <style>
+      :root {
+        --bg: #eef2f7;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --surface-muted: #edf2f7;
+        --ink: #122033;
+        --muted: #66758a;
+        --line: #d3dce8;
+        --accent: #2a62d5;
+        --accent-soft: #dce8ff;
+        --shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
+        --success: #1f8f58;
+        --success-soft: #dff4e6;
+        --warning: #c89218;
+        --warning-soft: #fff4d6;
+        --danger: #c74352;
+        --danger-soft: #fde4e7;
+        --lavender-soft: #efe6ff;
+        --cyan-soft: #dff7fb;
+        --sheet-tab: #e6ebf5;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(180deg, #f8fbff 0%, #eef2f7 100%);
+        color: var(--ink);
+        font-family: "Manrope", "Segoe UI", sans-serif;
+      }
+
+      .app {
+        display: grid;
+        gap: 10px;
+        min-height: 100vh;
+        padding: 10px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 8px 12px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.88);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
+        flex-wrap: nowrap;
+        overflow: hidden;
+      }
+
+      .toolbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: nowrap;
+        min-width: 0;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-left: 2px;
+      }
+
+      .brand-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 110px;
+        height: 34px;
+        flex: 0 0 auto;
+      }
+
+      .brand-logo svg {
+        display: block;
+        width: 110px;
+        height: auto;
+      }
+
+      .brand-copy {
+        position: relative;
+        display: grid;
+        gap: 1px;
+        min-height: 34px;
+        padding-right: 42px;
+        align-content: center;
+        min-width: 0;
+      }
+
+      .brand-copy strong {
+        display: block;
+        font-size: 15px;
+        line-height: 1.05;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .version-badge {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 34px;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #e8eefb;
+        color: #1e4ba6;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: help;
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      .brand-copy span,
+      .meta-strip,
+      .sheet-link {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .brand-copy .brand-subtitle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 8px;
+        line-height: 1;
+        color: #3d8c5d;
+        white-space: nowrap;
+        width: 110px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .status-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #3d8c5d;
+        flex: 0 0 auto;
+      }
+
+      .status-dot.loading {
+        background: #d7a327;
+        box-shadow: 0 0 0 3px rgba(215, 163, 39, 0.18);
+      }
+
+      .status-dot.error {
+        background: #c74352;
+        box-shadow: 0 0 0 3px rgba(199, 67, 82, 0.16);
+      }
+
+      .control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .control label {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+
+      .control input[type="date"] {
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        min-height: 30px;
+      }
+
+      .control input[type="text"] {
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        min-height: 30px;
+        min-width: 180px;
+      }
+
+      .control input[type="text"]::placeholder {
+        color: var(--muted);
+        opacity: 1;
+        font-size: 12px;
+      }
+
+      .control input[type="checkbox"] {
+        margin: 0;
+      }
+
+      body.auth-hidden { visibility: hidden; }
+
+      .user-menu {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 6px 0 10px;
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        font-size: 11px;
+        color: var(--muted);
+        flex: 0 0 auto;
+      }
+
+      .user-menu .email {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .user-menu button {
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .user-menu button:hover { color: var(--ink); border-color: #bfd0f3; }
+
+      .admin-link {
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        height: 26px;
+        border: 1px solid rgba(214, 163, 31, 0.5);
+        border-radius: 8px;
+        background: #fff4d6;
+        color: #8d6813;
+        font-size: 11px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 34px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        flex: 0 0 auto;
+        transition: color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .back-link:hover {
+        color: var(--ink);
+        border-color: #bfd0f3;
+      }
+
+      .toolbar button,
+      .sheet-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 34px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      .toolbar button.primary {
+        min-width: 104px;
+      }
+
+      .sheet-link {
+        min-width: 112px;
+      }
+
+      .toolbar button.primary {
+        border-color: #bfd0f3;
+        background: var(--accent-soft);
+        color: #123d91;
+      }
+
+      .toolbar button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+
+      .meta-strip {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        white-space: nowrap;
+      }
+
+      .tabs-wrap {
+        display: flex;
+        align-items: center;
+        align-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-height: 40px;
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.88);
+        box-shadow: var(--shadow);
+      }
+
+      .sheet-tab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 9px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        background: var(--sheet-tab);
+        color: #45607d;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      .sheet-tab.active {
+        background: #ffe59a;
+        color: #18263a;
+        border-color: #e2c15d;
+        box-shadow: inset 0 -2px 0 #d29e00;
+        font-weight: 700;
+      }
+
+      .sheet-tab-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 999px;
+        background: rgba(43, 99, 214, 0.12);
+        font-size: 10px;
+      }
+
+      .board {
+        display: grid;
+        gap: 8px;
+        min-height: 0;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: var(--shadow);
+      }
+
+      .board-head {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 26px;
+        padding: 0 4px;
+        flex-wrap: wrap;
+      }
+
+      .board-title {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+      }
+
+      .board-title strong {
+        font-size: 14px;
+      }
+
+      .board-title span,
+      .board-meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      #grid {
+        min-height: calc(100vh - 170px);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .tabulator {
+        border: 0;
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .tabulator .tabulator-header {
+        border-bottom: 1px solid var(--line);
+        background: #dbe7f8;
+      }
+
+      .tabulator .tabulator-header .tabulator-col {
+        min-height: 36px;
+        border-right: 1px solid #c7d5e9;
+        background: #dbe7f8;
+        color: #17304f;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .tabulator .tabulator-header .tabulator-col .tabulator-col-content {
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 4px 8px;
+      }
+
+      .column-title-wrap {
+        position: relative;
+        display: block;
+        padding-right: 16px;
+      }
+
+      .column-sort-indicator {
+        position: absolute;
+        top: -1px;
+        right: -2px;
+        width: 14px;
+        height: 14px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: #5e7596;
+        font-size: 10px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .column-sort-indicator:hover {
+        color: #1f4eaf;
+      }
+
+      .header-filter-popup {
+        position: fixed;
+        z-index: 1400;
+        min-width: 160px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .header-filter-popup input {
+        width: 100%;
+        min-height: 28px;
+        padding: 4px 8px;
+        border: 1px solid #c2d2ea;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.96);
+        font: inherit;
+        font-size: 12px;
+      }
+
+      .header-filter-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .header-filter-actions button {
+        min-height: 26px;
+        padding: 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+
+      .tabulator .tabulator-header .tabulator-col .tabulator-col-title {
+        white-space: normal;
+        line-height: 1.05;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+      }
+
+      .tabulator .tabulator-tableholder .tabulator-table .tabulator-row {
+        min-height: 28px;
+      }
+
+      .tabulator-row.group-break .tabulator-cell {
+        border-top: 3px solid #7fa9e8;
+      }
+
+      .tabulator-row .tabulator-cell {
+        padding: 4px 6px;
+        border-right: 1px solid #e1e7f0;
+        border-bottom: 1px solid #e6edf6;
+        color: #122033;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background: #fff;
+        transition: box-shadow 120ms ease, background-color 120ms ease;
+      }
+
+      .tabulator-row:nth-child(even) .tabulator-cell {
+        background: #fbfdff;
+      }
+
+      .tabulator-row.row-hover .tabulator-cell {
+        box-shadow:
+          inset 0 9999px rgba(255, 240, 187, 0.18),
+          inset 0 1px 0 rgba(222, 183, 76, 0.7),
+          inset 0 -1px 0 rgba(222, 183, 76, 0.7);
+      }
+
+      .tabulator-row.row-active .tabulator-cell {
+        box-shadow:
+          inset 0 9999px rgba(255, 225, 140, 0.28),
+          inset 0 1px 0 rgba(214, 163, 31, 0.95),
+          inset 0 -1px 0 rgba(214, 163, 31, 0.95);
+      }
+
+      .tabulator-row.row-active.row-hover .tabulator-cell {
+        box-shadow:
+          inset 0 9999px rgba(255, 225, 140, 0.34),
+          inset 0 1px 0 rgba(214, 163, 31, 1),
+          inset 0 -1px 0 rgba(214, 163, 31, 1);
+      }
+
+      .tabulator-row .tabulator-cell.tabulator-editing {
+        border-color: #87a8ea;
+        box-shadow: inset 0 0 0 1px #87a8ea;
+      }
+
+      .tabulator-row .tabulator-cell input,
+      .tabulator-row .tabulator-cell select,
+      .tabulator-row .tabulator-cell textarea {
+        width: 100%;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+      }
+
+      .tabulator-row .tabulator-cell textarea {
+        min-height: 48px;
+        resize: vertical;
+      }
+
+      .sync-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--success);
+      }
+
+      .sync-dot.idle {
+        background: var(--success);
+      }
+
+      .sync-spinner {
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        border: 2px solid #d8dfeb;
+        border-top-color: var(--accent);
+        border-right-color: var(--accent);
+        border-radius: 999px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      .sync-check,
+      .sync-error {
+        font-size: 12px;
+        line-height: 1;
+        font-weight: 700;
+      }
+
+      .sync-check {
+        color: var(--success);
+      }
+
+      .sync-error {
+        color: var(--danger);
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .tone-danger {
+        background: var(--danger-soft) !important;
+        color: #932a3a !important;
+      }
+
+      .tone-success {
+        background: #daf3de !important;
+        color: #116a3f !important;
+      }
+
+      .tone-success-strong {
+        background: #c7ead1 !important;
+        color: #0d6a3c !important;
+      }
+
+      .tone-warning {
+        background: var(--warning-soft) !important;
+        color: #8d6813 !important;
+      }
+
+      .tone-info {
+        background: var(--cyan-soft) !important;
+        color: #0e6674 !important;
+      }
+
+      .tone-lavender {
+        background: #f0ebff !important;
+        color: #6242a7 !important;
+      }
+
+      .tone-market-wb {
+        background: #f2e7ff !important;
+        color: #7c43bd !important;
+      }
+
+      .tone-market-oz {
+        background: #e4f4ff !important;
+        color: #1467ad !important;
+      }
+
+      .tone-market-ym {
+        background: #fff3ce !important;
+        color: #966d00 !important;
+      }
+
+      .tone-status-created {
+        background: #fff0c8 !important;
+        color: #805f00 !important;
+      }
+
+      .tone-status-ready {
+        background: #e7f4da !important;
+        color: #4c7424 !important;
+      }
+
+      .tone-status-shipped {
+        background: #caeacf !important;
+        color: #16643c !important;
+      }
+
+      .tone-flag-yes {
+        background: #edf9df !important;
+        color: #1d7a38 !important;
+        font-weight: 700;
+      }
+
+      .tone-flag-no {
+        background: #ffe2e7 !important;
+        color: #b4243f !important;
+        font-weight: 700;
+      }
+
+      .tone-link {
+        background: #1bd0dc !important;
+        color: #0b4e57 !important;
+        text-decoration: underline;
+      }
+
+      .tone-rate-cool {
+        background: #1bd0dc !important;
+        color: #0b4e57 !important;
+        font-weight: 700;
+      }
+
+      .tone-rate-warm {
+        background: #ffe04f !important;
+        color: #6d5600 !important;
+        font-weight: 700;
+      }
+
+      .tone-rate-diamond {
+        background: #ece7ff !important;
+        color: #5f49bf !important;
+        font-weight: 700;
+      }
+
+      .tone-rate-gold {
+        background: #ffe9ad !important;
+        color: #8b6800 !important;
+        font-weight: 700;
+      }
+
+      .loading,
+      .empty,
+      .fatal {
+        display: grid;
+        place-items: center;
+        min-height: 160px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .fatal {
+        color: var(--danger);
+      }
+
+      .toast-wrap {
+        position: fixed;
+        right: 14px;
+        bottom: 14px;
+        display: grid;
+        gap: 8px;
+        z-index: 1000;
+      }
+
+      .toast {
+        min-width: 220px;
+        max-width: 360px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        background: rgba(18, 32, 51, 0.94);
+        color: #fff;
+        font-size: 12px;
+      }
+
+      .toast.success {
+        background: rgba(17, 106, 63, 0.94);
+      }
+
+      .toast.error {
+        background: rgba(147, 42, 58, 0.96);
+      }
+
+      .dropdown-portal {
+        position: fixed;
+        z-index: 1300;
+        min-width: 120px;
+        max-height: 240px;
+        overflow: auto;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .dropdown-option {
+        display: block;
+        width: 100%;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--ink);
+        text-align: left;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .dropdown-option:hover,
+      .dropdown-option.active {
+        background: var(--accent-soft);
+        color: #123d91;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(18, 32, 51, 0.42);
+        z-index: 1200;
+      }
+
+      .overlay.open {
+        display: flex;
+      }
+
+      .overlay-card {
+        width: min(680px, 100%);
+        max-height: 80vh;
+        overflow: auto;
+        padding: 16px;
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .overlay-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .overlay-head strong {
+        font-size: 14px;
+      }
+
+      .overlay-head button {
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        cursor: pointer;
+      }
+
+      .overlay-body {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--ink);
+      }
+
+      @media (max-width: 900px) {
+        .toolbar {
+          flex-wrap: wrap;
+          overflow: visible;
+        }
+
+        .toolbar-group {
+          flex-wrap: wrap;
+        }
+
+        .toolbar {
+          padding: 8px;
+        }
+
+        .brand-copy span,
+        .meta-strip {
+          display: none;
+        }
+
+        .sheet-tab {
+          height: 26px;
+          padding: 0 10px;
+        }
+      }
+    </style>
+  </head>
+  <body class="auth-hidden">
+    <div class="app">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <a href="/" class="back-link" title="На главную Upseller">← Главная</a>
+          <div class="brand">
+            <div class="brand-logo" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="146" height="46" viewBox="0 0 146 46" fill="none">
+                <rect width="145.147" height="46" rx="10" fill="#171616"></rect>
+                <path d="M18.3359 16.6184L32.5156 5.36719L46.6953 16.6184V28.848L32.5156 40.3437L18.3359 28.848V16.6184Z" fill="#000200"></path>
+                <path d="M19.8027 19.0643L31.5376 28.3587V37.6532L19.8027 28.3587V19.0643Z" fill="#9AD8E5"></path>
+                <path d="M45.2285 19.0643L33.4936 28.3587V37.6532L45.2285 28.3587V19.0643Z" fill="#ED5250"></path>
+                <path d="M25.6702 12.705L38.383 22.9778L32.5156 27.3804L19.8027 17.1076L25.6702 12.705Z" fill="#FFD902"></path>
+                <path d="M32.5159 7.32391L45.2287 17.5968L39.3613 21.9994L26.6484 11.7266L32.5159 7.32391Z" fill="#FFD902"></path>
+                <path d="M63.1461 24.6699C63.1461 26.9833 61.367 28.5 59.1277 28.5C56.8885 28.5 55.1094 26.9833 55.1094 24.6699V19.7449H57.2413V24.5933C57.2413 25.8496 57.9774 26.6003 59.1277 26.6003C60.278 26.6003 61.0296 25.8496 61.0296 24.5933V17.5H63.1461V24.6699Z" fill="white"></path>
+                <path d="M56.1653 17.5673L58.9065 22.3153H53.4241L56.1653 17.5673Z" fill="white"></path>
+                <path d="M72.6505 21.16C72.6505 23.096 71.2585 24.712 68.8905 24.712H66.6985V29H64.4745V17.608H68.8905C71.2585 17.608 72.6505 19.224 72.6505 21.16ZM70.4265 21.16C70.4265 20.232 69.7865 19.592 68.7785 19.592H66.6985V22.712H68.7785C69.7865 22.712 70.4265 22.088 70.4265 21.16ZM81.8814 25.64C81.8814 27.848 80.0574 29.096 77.6574 29.096C75.9294 29.096 74.6174 28.728 73.4974 27.592L74.9374 26.152C75.6574 26.872 76.6334 27.112 77.6734 27.112C79.0014 27.112 79.7054 26.6 79.7054 25.688C79.7054 25.304 79.5934 24.984 79.3534 24.744C79.1294 24.536 78.9054 24.44 78.3294 24.36L76.9694 24.152C75.9614 24.008 75.2734 23.704 74.7614 23.208C74.2174 22.68 73.9454 21.928 73.9454 20.968C73.9454 18.936 75.4494 17.512 77.9134 17.512C79.4814 17.512 80.6174 17.896 81.5934 18.84L80.1854 20.232C79.4814 19.544 78.6014 19.448 77.8494 19.448C76.6654 19.448 76.1054 20.104 76.1054 20.888C76.1054 21.192 76.1854 21.48 76.4254 21.704C76.6494 21.912 76.9854 22.072 77.4654 22.136L78.8254 22.344C79.8654 22.488 80.5054 22.76 81.0014 23.24C81.6094 23.8 81.8814 24.616 81.8814 25.64ZM91.4785 29H83.9745V17.608H91.4785V19.592H86.1985V22.264H90.6945V24.248H86.1985V27.016H91.4785V29ZM101.054 29H93.662V17.608H95.886V27.016H101.054V29ZM110.257 29H102.865V17.608H105.089V27.016H110.257V29ZM119.572 29H112.068V17.608H119.572V19.592H114.292V22.264H118.788V24.248H114.292V27.016H119.572V29ZM130.38 29H127.804L125.58 24.456H123.98V29H121.756V17.608H126.22C128.54 17.608 129.916 19.192 129.916 21.096C129.916 22.696 128.94 23.688 127.836 24.088L130.38 29ZM127.692 21.096C127.692 20.216 127.052 19.592 126.076 19.592H123.98V22.6H126.076C127.052 22.6 127.692 21.976 127.692 21.096Z" fill="white"></path>
+              </svg>
+            </div>
+            <div class="brand-copy">
+              <strong>
+                <span>Календарь отгрузок</span>
+              </strong>
+              <span class="brand-subtitle"><span class="status-dot" id="statusDot"></span><span id="statusText">Подключение...</span></span>
+              <span class="version-badge" id="versionBadge" title="">v?</span>
+            </div>
+          </div>
+          <div class="control">
+            <input id="includeShipped" type="checkbox">
+            <label for="includeShipped">Показывать отгруженные</label>
+          </div>
+          <div class="control">
+            <label for="globalSearch">Поиск</label>
+            <input id="globalSearch" type="text" placeholder="Направление, водитель, статус...">
+          </div>
+          <button class="primary" id="reloadBtn" type="button">Обновить</button>
+        </div>
+        <div class="toolbar-group">
+          <div class="meta-strip" id="metaLine"></div>
+          <a class="sheet-link" id="sheetLink" href="#" target="_blank" rel="noopener noreferrer">АПСЕЛЛЕР 0,9</a>
+          <a class="admin-link" id="adminLink" href="/admin/" style="display:none">Админка</a>
+          <div class="user-menu">
+            <span class="email" id="currentUserEmail"></span>
+            <button type="button" id="logoutBtn">Выйти</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs-wrap" id="tabs"></div>
+
+      <div class="board">
+        <div class="board-head">
+          <div class="board-title">
+            <strong id="dayTitle">Выбранный день</strong>
+            <span id="daySubtitle">0 строк</span>
+          </div>
+          <div class="board-meta" id="boardMeta"></div>
+        </div>
+        <div id="grid"></div>
+      </div>
+    </div>
+
+    <div class="toast-wrap" id="toasts"></div>
+
+    <script src="https://unpkg.com/tabulator-tables@6.3.0/dist/js/tabulator.min.js"></script>
+    <script>
+      const state = {
+        bootstrap: null,
+        cacheByDate: {},
+        rawCalendar: null,
+        visibleCalendar: null,
+        activeDayIndex: 0,
+        selectedDateKey: '',
+        table: null,
+        syncTimers: {},
+        activeDropdownCleanup: null,
+        activeHeaderFilterCleanup: null,
+        tableFilters: {},
+        sortState: { field: '', dir: '' },
+        activeRowNumber: null,
+        loadingStatusTimer: null,
+      };
+
+      const TONE_CLASSES = [
+        'tone-danger',
+        'tone-success',
+        'tone-success-strong',
+        'tone-warning',
+        'tone-info',
+        'tone-lavender',
+        'tone-market-wb',
+        'tone-market-oz',
+        'tone-market-ym',
+        'tone-status-created',
+        'tone-status-ready',
+        'tone-status-shipped',
+        'tone-flag-yes',
+        'tone-flag-no',
+        'tone-link',
+        'tone-rate-cool',
+        'tone-rate-warm',
+        'tone-rate-diamond',
+        'tone-rate-gold',
+      ];
+
+      function runApi(path, options) {
+        return fetch(path, options || {}).then(function(response) {
+          if (response.status === 401) {
+            location.replace('/login/?next=' + encodeURIComponent(location.pathname));
+            throw new Error('Сессия истекла, перенаправляю на вход...');
+          }
+          return response.text().then(function(text) {
+            var data;
+            try { data = text ? JSON.parse(text) : {}; }
+            catch (e) { throw new Error('HTTP ' + response.status + ' — некорректный ответ сервера'); }
+            if (!response.ok || (data && data.error)) {
+              throw new Error((data && data.error) ? data.error : 'HTTP ' + response.status);
+            }
+            return data;
+          });
+        });
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        fetch('/api/auth/me')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (!data.user) {
+              location.replace('/login/?next=' + encodeURIComponent(location.pathname));
+              return;
+            }
+            document.getElementById('currentUserEmail').textContent = data.user.email;
+            if (data.user.role === 'admin') {
+              document.getElementById('adminLink').style.display = 'inline-flex';
+            }
+            document.getElementById('logoutBtn').addEventListener('click', function() {
+              fetch('/api/auth/logout', { method: 'POST' }).then(function() { location.href = '/login/'; });
+            });
+            document.body.classList.remove('auth-hidden');
+            return runApi('/api/bootstrap').then(initApp);
+          })
+          .catch(function(error) {
+            if (error && error.message && error.message.indexOf('Требуется вход') >= 0) {
+              location.replace('/login/?next=' + encodeURIComponent(location.pathname));
+              return;
+            }
+            showFatalError(error);
+          });
+      });
+
+      function initApp(bootstrap) {
+        state.bootstrap = bootstrap;
+        state.selectedDateKey = bootstrap.defaultDate;
+        document.getElementById('sheetLink').href = bootstrap.spreadsheetUrl;
+        setConnectionStatus('ready', 'Подключено');
+        document.getElementById('versionBadge').textContent = bootstrap.version || 'v?';
+        document.getElementById('versionBadge').title = bootstrap.releaseNotes || '';
+
+        document.getElementById('reloadBtn').addEventListener('click', function() {
+          loadDate(state.selectedDateKey || bootstrap.defaultDate, true);
+        });
+        document.getElementById('includeShipped').addEventListener('change', function() {
+          applyClientFilter();
+        });
+        document.getElementById('globalSearch').addEventListener('input', function() {
+          applyClientFilter();
+        });
+
+        loadDate(bootstrap.defaultDate, false);
+      }
+
+      function loadDate(dateKey, forceReload) {
+        if (!dateKey) {
+          return;
+        }
+
+        if (!forceReload && state.cacheByDate.__allDates) {
+          state.rawCalendar = state.cacheByDate.__allDates;
+          state.activeDayIndex = getDayIndexByDate(dateKey, state.rawCalendar.days);
+          state.tableFilters = {};
+          state.sortState = { field: '', dir: '' };
+          applyClientFilter(dateKey);
+          return;
+        }
+
+        setLoading(true);
+        runApi('/api/calendar')
+          .then(function(calendar) {
+            state.cacheByDate.__allDates = calendar;
+            state.rawCalendar = calendar;
+            state.activeDayIndex = getDayIndexByDate(dateKey, calendar.days);
+            state.tableFilters = {};
+            state.sortState = { field: '', dir: '' };
+            setLoading(false);
+            applyClientFilter(dateKey);
+          })
+          .catch(function(error) {
+            setLoading(false);
+            setConnectionStatus('error', 'Ошибка');
+            showGridMessage('fatal', humanizeError(error));
+          });
+      }
+
+      function applyClientFilter(preferredDateOverride) {
+        if (!state.rawCalendar) {
+          return;
+        }
+
+        const requestedDate = state.selectedDateKey || state.rawCalendar.requestedDate;
+        const currentVisibleDay = state.visibleCalendar && state.visibleCalendar.days
+          ? state.visibleCalendar.days[state.activeDayIndex]
+          : null;
+        const preferredDate = preferredDateOverride
+          || (currentVisibleDay && currentVisibleDay.isoDate
+            ? currentVisibleDay.isoDate
+            : requestedDate);
+        const includeShipped = document.getElementById('includeShipped').checked;
+        const globalSearch = String(document.getElementById('globalSearch').value || '').trim().toLowerCase();
+        state.visibleCalendar = {
+          requestedDate: requestedDate,
+          fetchedAt: state.rawCalendar.fetchedAt,
+          days: state.rawCalendar.days.map(function(day) {
+            return {
+              isoDate: day.isoDate,
+              displayDate: day.displayDate,
+              title: day.title,
+              count: day.rows.filter(function(row) {
+                return matchesVisibleRow(row, includeShipped, globalSearch);
+              }).length,
+              rows: day.rows.filter(function(row) {
+                return matchesVisibleRow(row, includeShipped, globalSearch);
+              }),
+            };
+          }),
+        };
+
+        state.activeDayIndex = getDayIndexByDate(preferredDate, state.visibleCalendar.days);
+        renderTabs();
+        renderGrid();
+      }
+
+      function setLoading(isLoading) {
+        const button = document.getElementById('reloadBtn');
+        button.disabled = isLoading;
+        button.textContent = isLoading ? 'Загрузка...' : 'Обновить';
+
+        if (isLoading) {
+          startLoadingStatusSequence();
+          showGridMessage('loading', 'Загружаю данные из витрины ОТГ_FILT...');
+        } else {
+          stopLoadingStatusSequence();
+          setConnectionStatus('ready', 'Подключено');
+        }
+      }
+
+      function showGridMessage(type, message) {
+        if (state.table) {
+          state.table.destroy();
+          state.table = null;
+        }
+        closeHeaderFilterPopup();
+
+        const grid = document.getElementById('grid');
+        grid.className = '';
+        grid.innerHTML = '<div class="' + type + '">' + escapeHtml(message) + '</div>';
+      }
+
+      function renderTabs() {
+        const tabs = document.getElementById('tabs');
+        tabs.innerHTML = '';
+
+        state.visibleCalendar.days.forEach(function(day, index) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'sheet-tab' + (index === state.activeDayIndex ? ' active' : '');
+          button.innerHTML =
+            '<span>' + escapeHtml(formatTabDate(day.displayDate)) + '</span>' +
+            '<span class="sheet-tab-count">' + escapeHtml(day.count) + '</span>';
+          button.addEventListener('click', function() {
+            state.activeDayIndex = index;
+            state.selectedDateKey = day.isoDate;
+            renderTabs();
+            renderGrid();
+          });
+          tabs.appendChild(button);
+        });
+      }
+
+      function renderGrid() {
+        const day = state.visibleCalendar.days[state.activeDayIndex];
+        if (!day) {
+          showGridMessage('empty', 'Нет данных для выбранной даты.');
+          return;
+        }
+
+        document.getElementById('dayTitle').textContent = day.displayDate;
+        document.getElementById('daySubtitle').textContent = day.count + ' строк';
+        document.getElementById('metaLine').textContent = state.visibleCalendar.fetchedAt
+          ? 'Обновлено ' + state.visibleCalendar.fetchedAt
+          : '';
+
+        if (!day.rows.length) {
+          showGridMessage('empty', 'На эту дату нет строк с учетом текущего фильтра.');
+          return;
+        }
+
+        closeHeaderFilterPopup();
+        if (state.table) {
+          state.table.destroy();
+        }
+
+        const preparedRows = day.rows
+          .map(function(row) {
+            return Object.assign({
+              _sync: 'idle',
+              routeLabel: buildRouteLabel(row),
+              routeGroupKey: buildRouteGroupKey(row),
+            }, row);
+          })
+          .sort(compareRowsForDisplay);
+
+        document.getElementById('grid').innerHTML = '';
+        state.table = new Tabulator('#grid', {
+          data: preparedRows,
+          index: 'rowNumber',
+          height: 'calc(100vh - 170px)',
+          layout: 'fitDataTable',
+          editTriggerEvent: 'click',
+          movableColumns: true,
+          resizableColumnFit: false,
+          reactiveData: true,
+          placeholder: 'Нет строк для отображения',
+          columnDefaults: {
+            headerSort: false,
+            resizable: true,
+            tooltip: false,
+          },
+          columns: buildColumns(),
+        });
+
+        state.table.on('rowMouseEnter', function(event, row) {
+          row.getElement().classList.add('row-hover');
+        });
+
+        state.table.on('rowMouseLeave', function(event, row) {
+          row.getElement().classList.remove('row-hover');
+        });
+
+        state.table.on('rowClick', function(event, row) {
+          setActiveRow(row);
+        });
+
+        state.table.on('renderComplete', function() {
+          applyRouteSeparators();
+        });
+
+        state.table.on('dataSorted', function() {
+          applyRouteSeparators();
+        });
+
+        state.table.on('dataFiltered', function() {
+          applyRouteSeparators();
+        });
+
+        if (state.sortState.field && state.sortState.dir) {
+          state.table.setSort(state.sortState.field, state.sortState.dir);
+        }
+        if (Object.keys(state.tableFilters).some(function(fieldKey) {
+          return String(state.tableFilters[fieldKey] || '').trim() !== '';
+        })) {
+          applyTableFilters();
+        }
+
+        restoreActiveRow();
+        applyRouteSeparators();
+
+      }
+
+      function buildColumns() {
+        const fieldOrder = [
+          'shipmentCost',
+          'rate',
+          'shipmentType',
+          'tareType',
+          'shipmentId',
+          'volume',
+          'marketplace',
+          'carrier',
+          'routeLabel',
+          'timeSlot',
+          'driver',
+          'vehicle',
+          'qualityControl',
+          'dataTransferred',
+          'barcodeApplied',
+          'status',
+          'comment',
+        ];
+        const columns = [
+          {
+            title: '',
+            field: '_sync',
+            width: 34,
+            minWidth: 34,
+            hozAlign: 'center',
+            frozen: true,
+            headerSort: false,
+            formatter: function(cell) {
+              const status = cell.getValue() || 'saved';
+              if (status === 'pending') {
+                return '<span class="sync-spinner"></span>';
+              }
+              if (status === 'saved') {
+                return '<span class="sync-check">✓</span>';
+              }
+              if (status === 'error') {
+                return '<span class="sync-error">!</span>';
+              }
+              return '<span class="sync-dot idle"></span>';
+            },
+          },
+        ];
+
+        fieldOrder.forEach(function(fieldKey) {
+          if (fieldKey === 'routeLabel') {
+            columns.push({
+              title: buildHeaderTitle('Направление', 'routeLabel'),
+              field: 'routeLabel',
+              width: 220,
+              minWidth: 180,
+              hozAlign: 'left',
+              editable: false,
+              headerClick: handleHeaderClick,
+              formatter: function(cell) {
+                return escapeHtml(cell.getValue() || '');
+              },
+              tooltip: function(event, cell) {
+                return buildCellTooltip({ key: 'routeLabel' }, cell.getRow().getData());
+              },
+            });
+            return;
+          }
+
+          const field = state.bootstrap.fields.find(function(item) {
+            return item.key === fieldKey;
+          });
+          if (!field) {
+            return;
+          }
+          columns.push({
+            title: buildHeaderTitle(escapeHtml(field.label).replace(/\n/g, '<br>'), field.key),
+            field: field.key,
+            width: Number.parseInt(field.width, 10) || 110,
+            minWidth: Number.parseInt(field.width, 10) || 50,
+            maxWidth: field.key === 'comment' ? 440 : undefined,
+            visible: field.visible !== false,
+            hozAlign: field.align || 'left',
+            editable: field.editable === true,
+            editor: field.editable ? buildEditor(field) : false,
+            headerClick: handleHeaderClick,
+            tooltip: field.key === 'shipmentCost' || field.key === 'comment' || field.key === 'routeLabel'
+              ? function(event, cell) {
+                return buildCellTooltip(field, cell.getRow().getData());
+              }
+              : false,
+            formatterParams: { fieldKey: field.key },
+            formatter: function(cell) {
+              return formatCell(cell, field);
+            },
+          });
+        });
+
+        return columns;
+      }
+
+      function buildHeaderTitle(labelHtml, fieldKey) {
+        const sortable = isSortableField(fieldKey);
+        return (
+          '<div class="column-title-wrap">' +
+            '<span>' + labelHtml + '</span>' +
+            (sortable ? '<button class="column-sort-indicator" type="button" data-field="' + escapeHtml(fieldKey) + '">▾</button>' : '') +
+          '</div>'
+        );
+      }
+
+      function isSortableField(fieldKey) {
+        return ['shipmentId', 'volume', 'marketplace', 'carrier', 'routeLabel', 'timeSlot', 'driver', 'vehicle', 'qualityControl', 'dataTransferred', 'barcodeApplied', 'status', 'shipmentType', 'tareType'].indexOf(fieldKey) >= 0;
+      }
+
+      function isFilterableField(fieldKey) {
+        return ['shipmentId', 'volume', 'marketplace', 'carrier', 'routeLabel', 'timeSlot', 'driver', 'vehicle', 'qualityControl', 'dataTransferred', 'barcodeApplied', 'status', 'shipmentType', 'tareType'].indexOf(fieldKey) >= 0;
+      }
+
+      function handleHeaderClick(event, column) {
+        const fieldKey = column.getField();
+        const sortButton = event.target && event.target.closest ? event.target.closest('.column-sort-indicator') : null;
+
+        if (sortButton) {
+          toggleColumnSort(column);
+          return;
+        }
+
+        if (isFilterableField(fieldKey)) {
+          openHeaderFilterPopup(column);
+        }
+      }
+
+      function toggleColumnSort(column) {
+        if (!state.table) {
+          return;
+        }
+
+        const fieldKey = column.getField();
+        if (!isSortableField(fieldKey)) {
+          return;
+        }
+
+        let nextDir = 'asc';
+        if (state.sortState.field === fieldKey && state.sortState.dir === 'asc') {
+          nextDir = 'desc';
+        } else if (state.sortState.field === fieldKey && state.sortState.dir === 'desc') {
+          nextDir = '';
+        }
+
+        state.sortState = { field: fieldKey, dir: nextDir };
+        if (!nextDir) {
+          state.table.clearSort();
+        } else {
+          state.table.setSort(fieldKey, nextDir);
+        }
+        applyRouteSeparators();
+      }
+
+      function openHeaderFilterPopup(column) {
+        closeHeaderFilterPopup();
+
+        const fieldKey = column.getField();
+        const popup = document.createElement('div');
+        popup.className = 'header-filter-popup';
+        const rect = column.getElement().getBoundingClientRect();
+        popup.style.left = rect.left + 'px';
+        popup.style.top = Math.min(rect.bottom + 2, window.innerHeight - 120) + 'px';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'Фильтр...';
+        input.value = state.tableFilters[fieldKey] || '';
+        popup.appendChild(input);
+
+        const actions = document.createElement('div');
+        actions.className = 'header-filter-actions';
+
+        const clearButton = document.createElement('button');
+        clearButton.type = 'button';
+        clearButton.textContent = 'Сбросить';
+        clearButton.addEventListener('mousedown', function(event) {
+          event.preventDefault();
+          input.value = '';
+          state.tableFilters[fieldKey] = '';
+          applyTableFilters();
+          closeHeaderFilterPopup();
+        });
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.textContent = 'Готово';
+        closeButton.addEventListener('mousedown', function(event) {
+          event.preventDefault();
+          closeHeaderFilterPopup();
+        });
+
+        actions.appendChild(clearButton);
+        actions.appendChild(closeButton);
+        popup.appendChild(actions);
+
+        input.addEventListener('input', function() {
+          state.tableFilters[fieldKey] = input.value.trim();
+          applyTableFilters();
+        });
+
+        input.addEventListener('keydown', function(event) {
+          if (event.key === 'Escape') {
+            closeHeaderFilterPopup();
+          } else if (event.key === 'Enter') {
+            closeHeaderFilterPopup();
+          }
+        });
+
+        const outsideHandler = function(event) {
+          if (!popup.contains(event.target)) {
+            closeHeaderFilterPopup();
+          }
+        };
+
+        document.body.appendChild(popup);
+        setTimeout(function() {
+          input.focus();
+          input.select();
+          document.addEventListener('mousedown', outsideHandler, true);
+        }, 0);
+
+        state.activeHeaderFilterCleanup = function() {
+          document.removeEventListener('mousedown', outsideHandler, true);
+          if (popup.parentNode) {
+            popup.parentNode.removeChild(popup);
+          }
+          state.activeHeaderFilterCleanup = null;
+        };
+      }
+
+      function closeHeaderFilterPopup() {
+        if (typeof state.activeHeaderFilterCleanup === 'function') {
+          state.activeHeaderFilterCleanup();
+        }
+      }
+
+      function applyTableFilters() {
+        if (!state.table) {
+          return;
+        }
+
+        state.table.clearFilter(true);
+        const activeFilterKeys = Object.keys(state.tableFilters)
+          .filter(function(fieldKey) {
+            return String(state.tableFilters[fieldKey] || '').trim() !== '';
+          });
+
+        if (activeFilterKeys.length) {
+          state.table.setFilter(function(data) {
+            return activeFilterKeys.every(function(fieldKey) {
+              const filterValue = String(state.tableFilters[fieldKey] || '').toLowerCase();
+              const rowValue = String(data[fieldKey] == null ? '' : data[fieldKey]).toLowerCase();
+              return rowValue.indexOf(filterValue) >= 0;
+            });
+          });
+        }
+        applyRouteSeparators();
+      }
+
+      function buildEditor(field) {
+        if (field.key === 'status') {
+          return selectEditor(state.bootstrap.statusOptions || []);
+        }
+        if (field.key === 'qualityControl') {
+          return selectEditor(state.bootstrap.qualityControlOptions || []);
+        }
+        if (field.key === 'dataTransferred') {
+          return selectEditor(state.bootstrap.dataTransferredOptions || []);
+        }
+        if (field.key === 'barcodeApplied') {
+          return selectEditor(state.bootstrap.barcodeAppliedOptions || []);
+        }
+        if (field.multiline) {
+          return textareaEditor;
+        }
+        return inputEditor;
+      }
+
+      function inputEditor(cell, onRendered, success, cancel) {
+        const editor = document.createElement('input');
+        editor.type = 'text';
+        editor.value = cell.getValue() || '';
+        let finished = false;
+        const oldValue = cell.getValue() == null ? '' : String(cell.getValue());
+
+        const finish = function(commit) {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          if (commit) {
+            const nextValue = editor.value;
+            success(nextValue);
+            persistCellChange(cell, nextValue, oldValue);
+          } else {
+            cancel();
+          }
+        };
+
+        onRendered(function() {
+          editor.focus();
+          editor.select();
+        });
+
+        editor.addEventListener('keydown', function(event) {
+          if (event.key === 'Enter') {
+            finish(true);
+          } else if (event.key === 'Escape') {
+            finish(false);
+          }
+        });
+
+        editor.addEventListener('blur', function() {
+          finish(true);
+        });
+
+        return editor;
+      }
+
+      function textareaEditor(cell, onRendered, success, cancel) {
+        const editor = document.createElement('textarea');
+        editor.value = cell.getValue() || '';
+        let finished = false;
+        const oldValue = cell.getValue() == null ? '' : String(cell.getValue());
+
+        const finish = function(commit) {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          if (commit) {
+            const nextValue = editor.value;
+            success(nextValue);
+            persistCellChange(cell, nextValue, oldValue);
+          } else {
+            cancel();
+          }
+        };
+
+        onRendered(function() {
+          editor.focus();
+        });
+
+        editor.addEventListener('keydown', function(event) {
+          if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            finish(true);
+          } else if (event.key === 'Escape') {
+            finish(false);
+          }
+        });
+
+        editor.addEventListener('blur', function() {
+          finish(true);
+        });
+
+        return editor;
+      }
+
+      function selectEditor(values) {
+        return function(cell, onRendered, success, cancel) {
+          const current = cell.getValue() || '';
+          const editor = document.createElement('div');
+          editor.tabIndex = 0;
+          editor.style.width = '100%';
+          editor.style.height = '100%';
+          let finished = false;
+
+          onRendered(function() {
+            editor.focus();
+            openDropdownPortal(cell, values || [], current, function(nextValue) {
+              finish(true, nextValue);
+            }, function() {
+              finish(false);
+            });
+          });
+
+          const finish = function(commit, explicitValue) {
+            if (finished) {
+              return;
+            }
+            finished = true;
+            if (commit) {
+              const nextValue = explicitValue == null ? current : explicitValue;
+              success(nextValue);
+              persistCellChange(cell, nextValue, current);
+            } else {
+              cancel();
+            }
+            closeActiveDropdown();
+          };
+
+          editor.addEventListener('blur', function() {
+            setTimeout(function() {
+              if (!finished) {
+                finish(false);
+              }
+            }, 0);
+          });
+
+          editor.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+              finish(false);
+            }
+          });
+
+          return editor;
+        };
+      }
+
+      function openDropdownPortal(cell, values, current, onPick, onCancel) {
+        closeActiveDropdown();
+        closeHeaderFilterPopup();
+
+        const portal = document.createElement('div');
+        portal.className = 'dropdown-portal';
+        const rect = cell.getElement().getBoundingClientRect();
+        portal.style.left = rect.left + 'px';
+        portal.style.top = Math.min(rect.bottom + 2, window.innerHeight - 250) + 'px';
+        portal.style.width = Math.max(rect.width, 120) + 'px';
+
+        const options = values.length ? values : [current];
+        options.forEach(function(value) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'dropdown-option' + (value === current ? ' active' : '');
+          button.textContent = value || 'Пусто';
+          button.addEventListener('mousedown', function(event) {
+            event.preventDefault();
+            onPick(value);
+          });
+          portal.appendChild(button);
+        });
+
+        const outsideHandler = function(event) {
+          if (!portal.contains(event.target)) {
+            onCancel();
+          }
+        };
+
+        document.body.appendChild(portal);
+        setTimeout(function() {
+          document.addEventListener('mousedown', outsideHandler, true);
+        }, 0);
+
+        state.activeDropdownCleanup = function() {
+          document.removeEventListener('mousedown', outsideHandler, true);
+          if (portal.parentNode) {
+            portal.parentNode.removeChild(portal);
+          }
+          state.activeDropdownCleanup = null;
+        };
+      }
+
+      function closeActiveDropdown() {
+        if (typeof state.activeDropdownCleanup === 'function') {
+          state.activeDropdownCleanup();
+        }
+      }
+
+      function setActiveRow(row) {
+        state.activeRowNumber = row.getData().rowNumber;
+        document.querySelectorAll('.tabulator-row.row-active').forEach(function(node) {
+          node.classList.remove('row-active');
+        });
+        row.getElement().classList.add('row-active');
+      }
+
+      function applyRouteSeparators() {
+        if (!state.table) {
+          return;
+        }
+
+        const rows = state.table.getRows('active');
+        let previousGroupKey = '';
+
+        rows.forEach(function(row, index) {
+          const groupKey = buildRouteGroupKey(row.getData());
+          row.getElement().classList.toggle('group-break', index > 0 && groupKey !== previousGroupKey);
+          previousGroupKey = groupKey;
+        });
+      }
+
+      function restoreActiveRow() {
+        if (state.activeRowNumber == null || !state.table) {
+          return;
+        }
+        const row = state.table.getRow(state.activeRowNumber);
+        if (row) {
+          row.getElement().classList.add('row-active');
+        }
+      }
+
+      function formatCell(cell, field) {
+        const rowData = cell.getRow().getData();
+        const value = cell.getValue();
+        const element = cell.getElement();
+
+        TONE_CLASSES.forEach(function(className) {
+          element.classList.remove(className);
+        });
+
+        computeCellTone(field, value, rowData).forEach(function(className) {
+          element.classList.add(className);
+        });
+
+        return escapeHtml(value == null ? '' : value);
+      }
+
+      function computeCellTone(field, value, row) {
+        const tones = [];
+        const text = String(value == null ? '' : value).trim().toUpperCase();
+        const balance = Number(row.balanceNumeric || 0);
+        const shipmentCost = Number(row.shipmentCostNumeric || 0);
+
+        if (field.key === 'shipmentCost') {
+          if (shipmentCost > 0 && balance < shipmentCost) {
+            tones.push('tone-danger');
+          } else if (shipmentCost > 0 && balance >= shipmentCost) {
+            tones.push('tone-success');
+          }
+        }
+
+        if (field.key === 'shipmentId') {
+          tones.push('tone-link');
+        }
+
+        if (field.key === 'rate') {
+          if (text.includes('D')) {
+            tones.push('tone-rate-diamond');
+          } else if (text.includes('I') || text.includes('И')) {
+            tones.push('tone-rate-gold');
+          } else if (text.includes('AN') || text.includes('VN')) {
+            tones.push('tone-rate-warm');
+          } else if (text) {
+            tones.push('tone-rate-cool');
+          }
+        }
+
+        if (field.key === 'marketplace') {
+          if (text === 'WB') {
+            tones.push('tone-market-wb');
+          } else if (text === 'OZ') {
+            tones.push('tone-market-oz');
+          } else if (text === 'ЯМ') {
+            tones.push('tone-market-ym');
+          }
+        }
+
+        if (field.key === 'status') {
+          if (text === 'ОТГРУЖ') {
+            tones.push('tone-status-shipped');
+          } else if (text === 'СОБРАНО') {
+            tones.push('tone-status-ready');
+          } else if (text === 'СОЗДАНО') {
+            tones.push('tone-status-created');
+          } else if (text === 'ОТМЕНА') {
+            tones.push('tone-danger');
+          }
+        }
+
+        if (field.key === 'dataTransferred' || field.key === 'barcodeApplied') {
+          if (text === 'ДА') {
+            tones.push('tone-flag-yes');
+          } else if (text === 'НЕТ') {
+            tones.push('tone-flag-no');
+          }
+        }
+
+        if (field.key === 'qualityControl') {
+          if (text === 'ДА') {
+            tones.push('tone-flag-yes');
+          } else if (text === 'НЕТ') {
+            tones.push('tone-flag-no');
+          }
+        }
+
+        return tones;
+      }
+
+      function persistCellChange(cell, rawNewValue, rawOldValue) {
+        const field = cell.getField();
+        if (field === '_sync') {
+          return;
+        }
+
+        const fieldDef = state.bootstrap.fields.find(function(item) {
+          return item.key === field;
+        });
+
+        if (!fieldDef || !fieldDef.editable) {
+          return;
+        }
+
+        const newValue = rawNewValue == null ? '' : String(rawNewValue).trim();
+        const oldValue = rawOldValue == null ? '' : String(rawOldValue).trim();
+        if (newValue === oldValue) {
+          return;
+        }
+
+        const row = cell.getRow();
+        row.update({_sync: 'pending'});
+        clearTimeout(state.syncTimers[row.getData().rowNumber]);
+
+        runApi('/api/update-shipment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rowNumber: Number(row.getData().rowNumber),
+            changes: makeChangePayload(field, newValue),
+            shipmentKey: row.getData().shipmentKey || ''
+          })
+        })
+          .then(function(result) {
+            const previousRowNumber = Number(row.getData().rowNumber);
+            const actualRowNumber = Number(result && result.rowNumber ? result.rowNumber : previousRowNumber);
+            const shipmentKey = row.getData().shipmentKey || '';
+            row.update({_sync: 'saved', rowNumber: actualRowNumber});
+            syncCacheValue(previousRowNumber, actualRowNumber, shipmentKey, field, newValue);
+            state.syncTimers[actualRowNumber] = setTimeout(function() {
+              if (row && row.getData()) {
+                row.update({_sync: 'idle'});
+              }
+            }, 1200);
+          })
+          .catch(function(error) {
+            row.update({_sync: 'error'});
+            row.update({ [field]: oldValue });
+            state.syncTimers[row.getData().rowNumber] = setTimeout(function() {
+              if (row && row.getData()) {
+                row.update({_sync: 'idle'});
+              }
+            }, 2200);
+            showToast('Ошибка сохранения: ' + humanizeError(error), 'error');
+          });
+      }
+
+      function makeChangePayload(field, value) {
+        const payload = {};
+        payload[field] = value;
+        return payload;
+      }
+
+      function syncCacheValue(previousRowNumber, nextRowNumber, shipmentKey, field, value) {
+        if (!state.rawCalendar || !state.visibleCalendar) {
+          return;
+        }
+
+        let shouldRefilter = false;
+
+        state.rawCalendar.days.forEach(function(day) {
+          day.rows.forEach(function(row) {
+            if (row.rowNumber === previousRowNumber || row.shipmentKey === shipmentKey) {
+              row.rowNumber = nextRowNumber;
+              row[field] = value;
+              if (field === 'status') {
+                shouldRefilter = true;
+              }
+            }
+          });
+        });
+
+        state.visibleCalendar.days.forEach(function(day) {
+          day.rows.forEach(function(row) {
+            if (row.rowNumber === previousRowNumber || row.shipmentKey === shipmentKey) {
+              row.rowNumber = nextRowNumber;
+              row[field] = value;
+            }
+          });
+        });
+
+        if (shouldRefilter && !document.getElementById('includeShipped').checked) {
+          applyClientFilter();
+        }
+      }
+
+      function showToast(message, type) {
+        const wrap = document.getElementById('toasts');
+        const node = document.createElement('div');
+        node.className = 'toast ' + (type || '');
+        node.textContent = message;
+        wrap.appendChild(node);
+
+        setTimeout(function() {
+          node.remove();
+        }, 2600);
+      }
+
+      function showFatalError(error) {
+        stopLoadingStatusSequence();
+        setConnectionStatus('error', 'Ошибка');
+        showGridMessage('fatal', humanizeError(error));
+      }
+
+      function humanizeError(error) {
+        return error && error.message ? error.message : String(error || 'Неизвестная ошибка');
+      }
+
+      function matchesVisibleRow(row, includeShipped, globalSearch) {
+        if (!includeShipped && row.status === 'ОТГРУЖ') {
+          return false;
+        }
+
+        if (!globalSearch) {
+          return true;
+        }
+
+        return Object.keys(row).some(function(key) {
+          if (['rowNumber', 'sourceRowNumber', 'balanceNumeric', 'shipmentCostNumeric', '_sync'].indexOf(key) >= 0) {
+            return false;
+          }
+          return String(row[key] == null ? '' : row[key]).toLowerCase().indexOf(globalSearch) >= 0;
+        });
+      }
+
+      function setConnectionStatus(mode, text) {
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        statusDot.className = 'status-dot' + (mode === 'loading' ? ' loading' : mode === 'error' ? ' error' : '');
+        statusText.textContent = text;
+      }
+
+      function startLoadingStatusSequence() {
+        stopLoadingStatusSequence();
+        const steps = ['Подключение...', 'Загрузка...', 'Подготовка...'];
+        let index = 0;
+        setConnectionStatus('loading', steps[index]);
+        state.loadingStatusTimer = setInterval(function() {
+          index = Math.min(index + 1, steps.length - 1);
+          setConnectionStatus('loading', steps[index]);
+        }, 500);
+      }
+
+      function stopLoadingStatusSequence() {
+        if (state.loadingStatusTimer) {
+          clearInterval(state.loadingStatusTimer);
+          state.loadingStatusTimer = null;
+        }
+      }
+
+      function formatTabDate(displayDate) {
+        const match = String(displayDate || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (!match) {
+          return displayDate || '';
+        }
+        return [match[1], match[2], match[3].slice(-2)].join('.');
+      }
+
+      function buildRouteLabel(row) {
+        const destination = String(row.destinationWarehouse || '').trim();
+        const finalWarehouse = String(row.finalWarehouse || '').trim();
+        if (!destination) {
+          return finalWarehouse || 'Без направления';
+        }
+        return finalWarehouse ? destination + ' → ' + finalWarehouse : destination;
+      }
+
+      function buildRouteGroupKey(row) {
+        const destination = String(row.destinationWarehouse || '').trim();
+        if (destination) {
+          return destination;
+        }
+        const routeLabel = String(row.routeLabel || '').trim();
+        return routeLabel.split('→')[0].trim() || 'Без направления';
+      }
+
+      function compareRowsForDisplay(left, right) {
+        const groupCompare = buildRouteGroupKey(left).localeCompare(buildRouteGroupKey(right), 'ru');
+        if (groupCompare !== 0) {
+          return groupCompare;
+        }
+
+        const routeCompare = buildRouteLabel(left).localeCompare(buildRouteLabel(right), 'ru');
+        if (routeCompare !== 0) {
+          return routeCompare;
+        }
+
+        return String(left.shipmentId || '').localeCompare(String(right.shipmentId || ''), 'ru');
+      }
+
+      function buildCellTooltip(field, row) {
+        if (field.key !== 'shipmentCost') {
+          return row && row[field.key] ? String(row[field.key]) : false;
+        }
+
+        const cost = Number(row.shipmentCostNumeric || 0);
+        const balance = Number(row.balanceNumeric || 0);
+        if (!cost) {
+          return row.shipmentCost || false;
+        }
+
+        if (balance < cost) {
+          return 'Недостаточно средств: баланс ' + formatMoney(balance) + ', стоимость отгрузки ' + formatMoney(cost) + '.';
+        }
+
+        return 'Баланс ' + formatMoney(balance) + ' покрывает стоимость отгрузки ' + formatMoney(cost) + '.';
+      }
+
+      function formatMoney(value) {
+        const numeric = Number(value || 0);
+        const absolute = Math.abs(Math.trunc(numeric)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+        return (numeric < 0 ? '-' : '') + absolute + 'р.';
+      }
+
+      function getDayIndexByDate(dateKey, days) {
+        if (!Array.isArray(days) || !days.length) {
+          return 0;
+        }
+
+        const exactIndex = days.findIndex(function(day) {
+          return day.isoDate === dateKey;
+        });
+        if (exactIndex >= 0) {
+          return exactIndex;
+        }
+
+        const firstFutureIndex = days.findIndex(function(day) {
+          return day.isoDate > dateKey;
+        });
+        if (firstFutureIndex >= 0) {
+          return firstFutureIndex;
+        }
+
+        return Math.max(0, days.length - 1);
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+    </script>
+  </body>
+</html>
