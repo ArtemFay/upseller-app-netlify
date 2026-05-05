@@ -167,8 +167,16 @@
           location.replace(next.startsWith('/') ? next : '/');
           return;
         }
+        // Локальный dev-режим: AUTH_DISABLED=true → пропускаем Google, логинимся как dev@local.
+        if (meData.devMode) {
+          await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const params = new URLSearchParams(location.search);
+          const next = params.get('next') || '/';
+          location.replace(next.startsWith('/') ? next : '/');
+          return;
+        }
         if (!meData.googleClientId) {
-          showConfigError('Авторизация пока не настроена: не задан GOOGLE_WEB_CLIENT_ID в Netlify. Скажите администратору, что он должен завершить настройку.');
+          showConfigError('Авторизация пока не настроена: не задан GOOGLE_WEB_CLIENT_ID на сервере. Скажите администратору, что он должен завершить настройку.');
           return;
         }
         renderSignInButton(meData.googleClientId);

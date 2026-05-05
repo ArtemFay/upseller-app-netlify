@@ -1,0 +1,3688 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <style>
+      :root {
+        --bg: #f5f1e8;
+        --panel: #fffdf8;
+        --line: #d8cfbe;
+        --text: #2f2b24;
+        --muted: #6f665b;
+        --accent: #355c4d;
+        --primary: #1b6b4a;
+        --ok-bg: #e4f1df;
+        --ok-line: #93c47d;
+        --err-bg: #f9dddd;
+        --err-line: #e06666;
+        --row-hover: #f3ede2;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font: 14px/1.35 Arial, sans-serif;
+        color: var(--text);
+        background: linear-gradient(180deg, #eee7db 0%, var(--bg) 100%);
+      }
+
+      .wrap {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 14px;
+        display: grid;
+        gap: 14px;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px;
+        box-shadow: 0 6px 24px rgba(57, 45, 25, 0.08);
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .home-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        text-decoration: none;
+        color: var(--text);
+        background: #f0f1f3;
+        border: 1px solid #e3e5e8;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .home-link:hover { background: #e3e5e8; }
+
+      .title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .actions,
+      .filters {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .actions {
+        align-items: center;
+      }
+
+      /* ===== Группировки: 2 ленты плиток (баркод, заявка) c cross-filter ===== */
+      /* min-width:0 на panel — без него grid-item растягивает колонку шире viewport
+         и overflow-x на ленте не срабатывает. Базовая ловушка flex/grid layout. */
+      .groups-panel { padding: 10px 12px; min-width: 0; }
+      .groups-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        min-width: 0;
+      }
+      .groups-row + .groups-row { margin-top: 6px; }
+      .groups-row-label {
+        flex: 0 0 56px;
+        font-size: 12px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .tiles-nav {
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        font-size: 14px;
+        color: var(--text);
+        cursor: pointer;
+        padding: 0;
+      }
+      .tiles-nav:hover:not(:disabled) { background: #f0f1f3; }
+      .tiles-nav:disabled { opacity: 0.35; cursor: default; }
+      .groups-row.has-overflow .tiles-nav { display: inline-flex; }
+      .groups-tiles-wrap {
+        flex: 1 1 auto;
+        min-width: 0;       /* критично: разрешает flex-item быть уже своего content */
+        position: relative;
+      }
+      .groups-tiles {
+        display: flex;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scroll-behavior: smooth;
+        padding: 2px 2px 6px;
+        scrollbar-width: thin;
+      }
+      .groups-tiles::-webkit-scrollbar { height: 4px; }
+      .groups-tiles::-webkit-scrollbar-thumb { background: #d0d3d8; border-radius: 3px; }
+      .group-tile {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        height: 32px;
+        font-family: var(--wms-mono, 'SF Mono', Consolas, monospace);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        background: #fff;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      .group-tile:hover { border-color: #b3bac3; }
+      .group-tile.is-active {
+        background: #2d7ef7;
+        color: #fff;
+        border-color: #2d7ef7;
+      }
+      .group-tile .gt-count {
+        font-size: 11px;
+        font-weight: 500;
+        opacity: 0.75;
+      }
+      .group-tile.is-yach { font-style: italic; }
+      .groups-tiles-empty {
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--muted);
+        padding: 6px 4px;
+      }
+      .groups-reset {
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        height: 32px;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+      .groups-reset:hover {
+        background: #f0f1f3;
+        color: var(--text);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stats .chip {
+        background: #efe7d9;
+        padding: 10px 12px;
+      }
+
+      .chip,
+      .button,
+      .status-pill {
+        border-radius: 999px;
+        padding: 8px 12px;
+        border: 1px solid #d8cfbe;
+        background: #fff;
+        color: var(--text);
+      }
+
+      .button {
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        cursor: pointer;
+      }
+
+      .button.primary {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .button.success {
+        background: #2f6b57;
+        color: #fff;
+        border-color: #2f6b57;
+      }
+
+      .button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .filters {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .filters.compact .field {
+        display: grid;
+        grid-template-columns: 110px 1fr;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .filters.compact .field label {
+        margin: 0;
+      }
+
+      .field {
+        display: grid;
+        gap: 4px;
+      }
+
+      .field label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      input, select {
+        width: 100%;
+        border: 1px solid #c9bfaf;
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px 11px;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .table-wrap {
+        overflow: hidden;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: #fff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+      }
+
+      thead th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f6f0e5;
+        color: var(--text);
+        font-size: 12px;
+        text-align: center;
+        padding: 10px 6px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      th[data-sort] {
+        cursor: pointer;
+        user-select: none;
+        position: relative;
+        padding-right: 12px;
+      }
+      th[data-sort]:hover {
+        background: #ede7d9;
+      }
+      th[data-sort]::after {
+        content: '';
+        position: absolute;
+        right: 2px;
+        top: 50%;
+        transform: translateY(-50%);
+        border-left: 3px solid transparent;
+        border-right: 3px solid transparent;
+        border-bottom: 4px solid #ccc5b7;
+        opacity: 0.5;
+      }
+      th.sort-asc::after {
+        border-bottom: 4px solid var(--accent);
+        border-top: none;
+        opacity: 1;
+      }
+      th.sort-desc::after {
+        border-bottom: none;
+        border-top: 4px solid var(--accent);
+        opacity: 1;
+      }
+
+      tbody tr:hover td {
+        background: var(--row-hover);
+      }
+
+      tbody td {
+        padding: 9px 6px;
+        border-bottom: 1px solid #eee7db;
+        vertical-align: middle;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      tbody tr.row-ok {
+        background: var(--ok-bg);
+      }
+
+      tbody tr.row-error {
+        background: var(--err-bg);
+      }
+
+      tbody tr.box-start td {
+        border-top: 6px solid #f5f1e8;
+      }
+
+      .col-sync {
+        width: 24px;
+        text-align: center;
+        padding: 0;
+      }
+      .col-addr {
+        width: 44px;
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .col-tara {
+        width: 62px;
+        text-align: center;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .col-status {
+        width: 86px;
+        text-align: center;
+      }
+
+      .col-box {
+        width: 100px;
+        font-weight: 700;
+        text-align: center;
+        white-space: nowrap;
+        word-break: normal;
+        overflow-wrap: normal;
+      }
+
+      .col-type {
+        width: 76px;
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .col-skucount,
+      .col-total {
+        width: 38px;
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .col-qty {
+        width: 54px;
+        text-align: center;
+        font-size: 12px;
+      }
+
+      .col-barcode {
+        width: 112px;
+        text-align: center;
+        white-space: nowrap;
+      }
+      .barcode-prefix {
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: -0.3px;
+      }
+      .barcode-tail {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--primary);
+      }
+
+      .col-sku {
+        width: auto;
+        font-size: 12px;
+        white-space: normal;
+        line-height: 1.2;
+      }
+
+      .col-check {
+        width: 58px;
+        text-align: center;
+      }
+
+      .checkbox {
+        width: 26px;
+        height: 26px;
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 5px 8px;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .status-GOTOBO, .status-ГОТОВО { background: #dcecf8; }
+      .status-ХРАНЕНИЕ { background: #ece7fa; }
+      .status-NEW { background: #f8eed3; }
+      .status-СБОРКА { background: #fce4d8; }
+
+      .strike {
+        text-decoration: line-through;
+        opacity: 0.72;
+      }
+
+
+
+      .qty-change {
+        display: inline-grid;
+        justify-items: center;
+        gap: 0;
+        white-space: nowrap;
+        line-height: 1.05;
+      }
+
+      .qty-old {
+        text-decoration: line-through;
+        opacity: 0.72;
+      }
+
+      .qty-arrow {
+        color: var(--muted);
+      }
+
+      .box-text {
+        display: inline-block;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--primary);
+      }
+
+      .box-link {
+        display: inline-block;
+        max-width: 100%;
+        color: var(--primary);
+        text-decoration: none;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .box-link:hover {
+        text-decoration: underline;
+      }
+
+      .empty {
+        padding: 30px 16px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .pager {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+
+      .pager-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 253, 248, 0.78);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .overlay.visible { display: flex; }
+
+      .spinner {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 4px solid #e6dece;
+        border-top-color: var(--accent);
+        animation: spin 0.9s linear infinite;
+      }
+
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+
+      @media (max-width: 980px) {
+        .col-sku,
+        thead th.col-sku,
+        tbody td.col-sku {
+          display: none;
+        }
+      }
+
+      @media (max-width: 820px) {
+        .wrap { padding: 10px; }
+        .filters { grid-template-columns: 1fr 1fr; }
+        body { font-size: 13px; }
+        .panel { padding: 12px; }
+        .col-type,
+        thead th.col-type,
+        tbody td.col-type {
+          display: none;
+        }
+        .col-sync { width: 18px; }
+        .col-addr { width: 42px; }
+        .col-tara { width: 58px; font-size: 10px; }
+        .col-status { width: 74px; }
+        .col-box { width: 96px; }
+        .col-skucount,
+        .col-total { width: 40px; }
+        .col-qty { width: 54px; }
+        .col-barcode { width: 96px; }
+        .barcode-prefix { font-size: 9px; }
+        .barcode-tail { font-size: 13px; }
+        .col-check { width: 56px; }
+        .status-pill { padding: 4px 6px; font-size: 10px; }
+      }
+
+      @media (max-width: 560px) {
+        .wrap { padding: 8px; }
+        .topbar { align-items: stretch; }
+        .actions { width: 100%; }
+        .actions .button { flex: 1 1 0; }
+        .title { font-size: 18px; }
+        .filters.compact .field { grid-template-columns: 90px 1fr; }
+        thead th, tbody td { padding: 8px 4px; }
+        .col-sync { width: 16px; }
+        .col-addr { width: 38px; font-size: 11px; }
+        .col-tara { width: 56px; font-size: 10px; }
+        .col-status { width: 64px; }
+        .col-box { width: 92px; font-size: 13px; }
+        .col-skucount,
+        .col-total { width: 36px; font-size: 11px; }
+        .col-qty { width: 52px; font-size: 11px; }
+        .col-barcode { width: 88px; }
+        .barcode-prefix { font-size: 8px; }
+        .barcode-tail { font-size: 12px; }
+        .col-check { width: 54px; }
+        .checkbox { width: 28px; height: 28px; }
+        .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        z-index: 1000;
+      }
+
+      .modal-overlay.show {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .modal {
+        background: var(--bg);
+        width: 94%;
+        max-width: 680px;
+        max-height: 92vh;
+        overflow-y: auto;
+        border-radius: 16px;
+        box-shadow: 0 12px 48px rgba(0,0,0,0.3);
+        position: relative;
+      }
+
+      .modal-state {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 253, 248, 0.88);
+        z-index: 5;
+        border-radius: 16px;
+        backdrop-filter: blur(2px);
+      }
+
+      .modal-state.show {
+        display: flex;
+      }
+
+      .modal-state-card {
+        min-width: 260px;
+        max-width: 360px;
+        padding: 18px 20px;
+        border-radius: 16px;
+        background: #fffdf8;
+        border: 1px solid var(--line);
+        box-shadow: 0 12px 32px rgba(57, 45, 25, 0.15);
+        text-align: center;
+      }
+
+      .modal-state-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        margin-bottom: 10px;
+      }
+
+      .modal-state-title {
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+
+      .modal-state-text {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .success-check {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #e4f1df;
+        color: #355c4d;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 1;
+      }
+
+      .modal-title {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0;
+      }
+
+      .modal-close {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 4px 8px;
+        color: var(--muted);
+      }
+
+      .modal-body {
+        padding: 16px;
+      }
+
+      .modal-footer {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        padding: 16px;
+        border-top: 1px solid var(--line);
+        position: sticky;
+        bottom: 0;
+        background: var(--bg);
+      }
+
+      .items-section {
+        padding: 16px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: #f9f7f3;
+      }
+
+      .items-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+        gap: 12px;
+      }
+
+      .items-header h3 {
+        margin: 0 0 4px 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .hint {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .items {
+        display: grid;
+        gap: 10px;
+      }
+
+      .item-row {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+      }
+
+      .item-row.valid {
+        border-color: #93c47d;
+        background: #f4f9f0;
+      }
+
+      .item-row.invalid {
+        border-color: #e06666;
+        background: #fef6f6;
+      }
+
+      .item-row.duplicate {
+        border-color: #f1c232;
+        background: #fff8e1;
+      }
+
+      .item-row.duplicate-merged {
+        border-color: #d4c478;
+        background: #faf6e8;
+        opacity: 0.7;
+      }
+
+      .dup-msg {
+        font-size: 13px;
+        color: #8a6d00;
+        margin-top: 4px;
+        font-weight: 600;
+      }
+
+      /* ===== Combobox: единое поле «Баркод | SKU» — поиск + выпадающий список вместе ===== */
+      .combobox-wrap {
+        position: relative;
+      }
+      .combobox-input {
+        width: 100%;
+        padding: 8px 28px 8px 10px;
+        border: 1px solid #c9bfaf;
+        border-radius: 8px;
+        font: inherit;
+        font-family: var(--wms-mono, 'SF Mono', Consolas, monospace);
+      }
+      .combobox-wrap.is-open .combobox-input {
+        border-color: var(--wms-primary, #2d7ef7);
+      }
+      .combobox-caret {
+        position: absolute;
+        right: 10px;
+        top: 9px;
+        color: var(--muted);
+        pointer-events: none;
+        font-size: 11px;
+        line-height: 1;
+      }
+      .combobox-clear {
+        position: absolute;
+        right: 26px;
+        top: 7px;
+        width: 18px;
+        height: 18px;
+        font-size: 14px;
+        line-height: 1;
+        color: var(--muted);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+      }
+      .combobox-clear:hover { color: var(--text); }
+      .combobox-dropdown {
+        position: absolute;
+        top: calc(100% - 1px);
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        max-height: 280px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid var(--wms-primary, #2d7ef7);
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.10);
+      }
+      .combobox-dropdown[hidden] { display: none; }
+      .combobox-group {
+        padding: 6px 10px;
+        font-size: 11px;
+        color: var(--muted);
+        text-transform: uppercase;
+        background: #f6f7f9;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid #eef0f2;
+      }
+      .combobox-option {
+        padding: 8px 10px;
+        cursor: pointer;
+        font-size: 13px;
+        font-family: var(--wms-mono, 'SF Mono', Consolas, monospace);
+        border-bottom: 1px solid #f4f5f7;
+      }
+      .combobox-option:last-child { border-bottom: none; }
+      .combobox-option:hover,
+      .combobox-option.is-active {
+        background: #eaf3ff;
+      }
+      .combobox-option.is-selected {
+        color: var(--wms-primary, #2d7ef7);
+        font-weight: 600;
+      }
+      .combobox-empty {
+        padding: 14px 10px;
+        color: var(--muted);
+        font-size: 13px;
+        text-align: center;
+      }
+      .combobox-hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      .barcode-readonly-display-wrap {
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f7f3e8;
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+      }
+
+      .barcode-readonly-display {
+        font-family: 'Courier New', Consolas, monospace;
+        font-size: 14px;
+        word-break: break-all;
+      }
+
+      .barcode-readonly-display .last5 {
+        font-weight: 800;
+        color: #355c4d;
+        font-size: 16px;
+      }
+
+      .merge-dupes-btn {
+        background: #f1c232;
+        color: #4a3a00;
+        font-weight: 700;
+        border: 1px solid #c9a324;
+        margin-bottom: 10px;
+      }
+
+      .merge-dupes-btn:hover {
+        background: #e0b020;
+      }
+
+      .item-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .sku-title {
+        font-weight: 700;
+        font-size: 13px;
+      }
+
+      .sub {
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      /* Левая колонка — Поиск+Баркод (растягивается). Правая — Кол-во (фиксирована, max ~9999). */
+      .item-grid {
+        display: grid;
+        grid-template-columns: 1fr 88px;
+        gap: 10px;
+        align-items: start;
+      }
+
+      .item-note-preview {
+        padding: 8px 10px;
+        background: #f5f1e8;
+        border-radius: 8px;
+        font-size: 11px;
+        color: var(--muted);
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+      }
+
+      .field { margin-bottom: 12px; }
+      .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+      /* Переключатель режима ввода номера короба (auto / manual) */
+      .box-number-mode {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+      .box-number-mode-pill {
+        flex: 1 1 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        background: #f0f1f3;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        color: var(--text);
+        margin-bottom: 0;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      .box-number-mode-pill:hover { background: #e3e5e8; }
+      .box-number-mode-pill input[type="radio"] {
+        margin: 0;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+      }
+      .box-number-mode-pill:has(input[type="radio"]:checked) {
+        background: #eaf3ff;
+        border-color: var(--wms-primary, #2d7ef7);
+        color: var(--wms-primary, #2d7ef7);
+        font-weight: 600;
+      }
+
+      /* === Калькулятор тары: тип + габариты + автокод === */
+      .tara-calc {
+        display: grid;
+        gap: 8px;
+      }
+      .tara-type-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .tara-type-pill {
+        flex: 0 1 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        background: #f0f1f3;
+        border: 1px solid #e3e5e8;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        margin-bottom: 0;
+      }
+      .tara-type-pill:hover { background: #e3e5e8; }
+      .tara-type-pill input[type="radio"] {
+        margin: 0;
+        width: 14px;
+        height: 14px;
+        flex: 0 0 auto;
+      }
+      .tara-type-pill:has(input[type="radio"]:checked) {
+        background: #eaf3ff;
+        border-color: var(--wms-primary, #2d7ef7);
+        color: var(--wms-primary, #2d7ef7);
+        font-weight: 600;
+      }
+      .tara-dims-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tara-dim-input {
+        width: 80px;
+        padding: 6px 8px;
+        border: 1px solid #c9bfaf;
+        border-radius: 8px;
+        font: inherit;
+        text-align: center;
+      }
+      .tara-mul {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .tara-mul-unit {
+        margin-left: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .tara-dims-row.is-disabled .tara-dim-input,
+      .tara-dims-row.is-disabled .tara-mul,
+      .tara-dims-row.is-disabled .tara-mul-unit {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      .tara-code-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .tara-code-label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .tara-code-value {
+        font-family: var(--wms-mono, 'SF Mono', Consolas, monospace);
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--wms-primary, #2d7ef7);
+      }
+      .field.invalid input, .field.invalid select, .field.invalid textarea {
+        border-color: #e06666;
+        background: #fef6f6;
+      }
+      .field input, .field select, .field textarea {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #c9bfaf;
+        border-radius: 8px;
+        font: inherit;
+      }
+      .field.invalid input, .field.invalid select { border-color: var(--err-line); background: var(--err-bg); }
+      .field textarea { min-height: 60px; resize: vertical; }
+
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+      @media (max-width: 640px) {
+        .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      }
+
+      /* Sync status indicators */
+      .sync-dot {
+        display: inline-block;
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        vertical-align: middle;
+      }
+      .sync-connected { background: #f0c040; }
+      .sync-syncing {
+        background: #999;
+        animation: pulse 0.8s ease-in-out infinite;
+      }
+      .sync-synced { background: #4caf50; }
+      .sync-synced-changed {
+        background: none;
+        width: auto; height: auto;
+        border-radius: 0;
+        color: #4caf50;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+      }
+      .sync-synced-changed::after { content: '\2713'; }
+      .sync-error { background: #e06666; }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+
+      /* Spinner for start screen */
+      .spinner {
+        width: 24px; height: 24px;
+        border: 3px solid var(--line);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin: 0 auto;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <link rel="stylesheet" href="/ui/wms.css?v=2026-05-05">
+  </head>
+  <body>
+    <!-- ===== СТАРТОВЫЙ ЭКРАН (выбор заявки) ===== -->
+    <div id="startScreen" class="wrap" style="display:none;">
+      <div id="startScreenTitle" class="panel">
+        <div class="topbar">
+          <div class="title-row">
+            <a href="/" class="home-link" title="На главную" onclick="return confirmGoHome(event)">←</a>
+            <h1 class="title">Invent Web <span class="muted" style="font-size:14px; font-weight:700; margin-left:6px;"><?= context.appVersion ?></span></h1>
+          </div>
+        </div>
+      </div>
+
+      <div id="activeSessionsPanel" class="panel" style="display:none;">
+        <h3 style="margin:0 0 10px;">Активные сессии</h3>
+        <div id="activeSessionsList"></div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin:0 0 10px;">Начать инвентаризацию</h3>
+        <div id="zayavkaLoading" style="display:flex; align-items:center; gap:10px; padding:12px 0;">
+          <div class="spinner" style="width:22px; height:22px; border-width:3px;"></div>
+          <span class="muted">Загрузка списка заявок...</span>
+        </div>
+        <div id="zayavkaForm" style="display:none;">
+          <div class="field">
+            <label>Заявка на инвент</label>
+            <select id="zayavkaSelect" onchange="onZayavkaChange()">
+              <option value="">— Выберите заявку —</option>
+            </select>
+          </div>
+          <div id="zayavkaInfo" style="display:none; margin:10px 0; padding:10px; background:var(--ok-bg); border:1px solid var(--ok-line); border-radius:8px;"></div>
+        </div>
+        <div id="zayavkaError" style="display:none; color:var(--err-line); padding:8px 0;"></div>
+      </div>
+
+    </div>
+
+    <!-- Модалка ввода имени сотрудника (вне startScreen для доступа из topbar) -->
+    <div id="startOverlay" class="modal-overlay">
+      <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Начать инвент</h2>
+          <button class="modal-close" onclick="closeStartModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Исполнитель (имя сотрудника)</label>
+            <input id="employeeInput" placeholder="Например: Артём">
+          </div>
+          <div id="startError" style="color:var(--err-line); margin-top:8px; display:none;"></div>
+          <div id="startSpinner" style="display:none; text-align:center; margin-top:12px;">
+            <div class="spinner"></div>
+            <div class="muted" style="margin-top:6px;">Создание сессии и загрузка коробов в черновик...</div>
+          </div>
+        </div>
+        <div class="modal-footer" id="startModalFooter">
+          <button class="button primary" onclick="confirmStartInvent()">Подтвердить</button>
+          <button class="button" onclick="closeStartModal()">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== РАБОЧИЙ ЭКРАН (список коробов) ===== -->
+    <div id="workScreen" class="wrap" style="display:none;">
+      <div class="panel">
+        <div class="topbar">
+          <div class="title-row">
+            <a href="/" class="home-link" title="На главную" onclick="return confirmGoHome(event)">←</a>
+            <h1 class="title">Invent Web <span class="muted" title="build <?= context.buildStamp ?>&#10;<?= context.releaseNotes ?>" style="font-size:14px; font-weight:700; margin-left:6px; cursor:help;"><?= context.appVersion ?></span></h1>
+          </div>
+          <div id="previewActions" class="actions" style="display:none;">
+            <button id="topStartBtn" class="button primary" onclick="openStartModal()" disabled>Начать инвент</button>
+          </div>
+          <div id="workActions" class="actions" style="display:none;">
+            <button class="button primary" onclick="openModal()">Создать короб</button>
+            <button id="finalizeBtn" class="button success" onclick="openFinalizeModal()" disabled>Провести</button>
+            <a class="button" href="<?= context.baseUrl ?>?view=log">LOG</a>
+          </div>
+        </div>
+      </div>
+
+      <div id="clientInfoPanel" class="panel" style="display:none;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px;">
+          <span id="clientInfoName" style="font-weight:700; color:var(--primary);"></span>
+          <span id="clientInfoReport" class="muted"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="filters compact">
+          <div class="field">
+            <label>Поиск по коробу / SKU / баркоду</label>
+            <input id="searchInput" oninput="handleFilterChange()" placeholder="Например: П4116-894 или 2039604">
+          </div>
+          <div class="field">
+            <label>Статус</label>
+            <select id="statusFilter" onchange="handleFilterChange()"></select>
+          </div>
+          <div class="field">
+            <label>Тара</label>
+            <select id="taraFilter" onchange="handleFilterChange()"></select>
+          </div>
+          <div class="field">
+            <label>Адрес</label>
+            <select id="addressFilter" onchange="handleFilterChange()"></select>
+          </div>
+          <div class="field">
+            <label>Проверка</label>
+            <select id="verifiedFilter" onchange="handleFilterChange()">
+              <option value="">Все</option>
+              <option value="yes">Только проверенные</option>
+              <option value="no">Только не проверенные</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== Плитки группировки (баркод / заявка), cross-filter ===== -->
+      <div class="panel groups-panel">
+        <div class="groups-row" id="bar5Row">
+          <div class="groups-row-label">Баркод</div>
+          <button type="button" class="tiles-nav tiles-nav-left" onclick="scrollTilesRow('bar5Tiles', -1)" title="Прокрутить влево">‹</button>
+          <div class="groups-tiles-wrap">
+            <div id="bar5Tiles" class="groups-tiles" role="tablist" aria-label="Группы по баркоду"></div>
+          </div>
+          <button type="button" class="tiles-nav tiles-nav-right" onclick="scrollTilesRow('bar5Tiles', 1)" title="Прокрутить вправо">›</button>
+          <button type="button" class="groups-reset" onclick="resetGroupFilters()" title="Сбросить выбор">Сброс</button>
+        </div>
+        <div class="groups-row" id="zayavkaRow">
+          <div class="groups-row-label">Заявка</div>
+          <button type="button" class="tiles-nav tiles-nav-left" onclick="scrollTilesRow('zayavkaTiles', -1)" title="Прокрутить влево">‹</button>
+          <div class="groups-tiles-wrap">
+            <div id="zayavkaTiles" class="groups-tiles" role="tablist" aria-label="Группы по заявке"></div>
+          </div>
+          <button type="button" class="tiles-nav tiles-nav-right" onclick="scrollTilesRow('zayavkaTiles', 1)" title="Прокрутить вправо">›</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="stats">
+          <div class="chip">Строк: <strong id="statRows"></strong></div>
+          <div class="chip">Проверено: <strong id="statVerified"></strong></div>
+          <div class="chip">Осталось: <strong id="statRemaining"></strong></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-sync" title="Синхронизация">&#x21C5;</th>
+                <th class="col-addr" data-sort="address" onclick="toggleSort('address')">АДР</th>
+                <th class="col-tara" data-sort="tara" onclick="toggleSort('tara')">ТАРА</th>
+                <th class="col-status" data-sort="status" onclick="toggleSort('status')">СТАТУС</th>
+                <th class="col-box" data-sort="box" onclick="toggleSort('box')">КОРОБ</th>
+                <th class="col-type" data-sort="type" onclick="toggleSort('type')">ТИП</th>
+                <th class="col-skucount" data-sort="skucount" onclick="toggleSort('skucount')">SKU</th>
+                <th class="col-total" data-sort="total" onclick="toggleSort('total')">ВСЕ</th>
+                <th class="col-barcode" data-sort="barcode" onclick="toggleSort('barcode')">БАРКОД</th>
+                <th class="col-qty" data-sort="qty" onclick="toggleSort('qty')">КОЛ</th>
+                <th class="col-sku" data-sort="sku" onclick="toggleSort('sku')">SKU</th>
+                <th class="col-check" data-sort="verified" onclick="toggleSort('verified')">ПР</th>
+              </tr>
+            </thead>
+            <tbody id="rowsBody"></tbody>
+          </table>
+        </div>
+        <div id="emptyState" class="empty" style="display:none;">Ничего не выбрано в группах. Кликните по плитке баркода или заявки.</div>
+      </div>
+    </div> <!-- /workScreen -->
+
+    <script>
+      // Возврат на главную с подтверждением (общий для всех модулей паттерн).
+      function confirmGoHome(event) {
+        const ok = window.confirm('Вы уверены, что хотите вернуться на главный экран без каких-либо дополнительных проверок?');
+        if (!ok && event) {
+          event.preventDefault();
+          return false;
+        }
+        return true;
+      }
+
+      const payload = <?!= JSON.stringify(payload) ?>;
+      const context = <?!= JSON.stringify(context) ?>;
+      let rows = payload.rows || [];
+      let syncRevision = payload.syncRevision || '0';
+      let sortKey = '';
+      let sortDir = 'asc';
+      let draftRowCounter = -1;
+      let previewMode = false;
+      let selectedZayavkaId = null;
+      // Группировка списка коробов: cross-filter по последним 5 цифрам баркода и по префиксу заявки.
+      // null = ничего не выбрано в данной ленте; повторный клик по выбранной плитке = снять выбор.
+      let selectedBar5 = null;
+      let selectedZayavka = null;
+      const YACH_GROUP = 'ЯЧ';
+      const DRAFT_STORAGE_KEY = 'invent-web-draft-v039';
+
+      /** Префикс для новых коробов — shortCode из reportId (e.g. "VC007") */
+      function getBoxPrefix() {
+        return context.chernSheetName || 'I0000';
+      }
+      function formatBoxNumber(shortNumber) {
+        return getBoxPrefix() + '-' + String(parseInt(shortNumber, 10)).padStart(3, '0');
+      }
+
+      // ===== SyncQueue — фоновая синхронизация с ЧЕРНОВИК =====
+      const SyncQueue = {
+        pending: [],
+        inflight: null,
+        debounceTimer: null,
+
+        push(update) {
+          this.pending.push(update);
+          this.scheduleFlush();
+        },
+
+        scheduleFlush() {
+          if (this.debounceTimer) clearTimeout(this.debounceTimer);
+          this.debounceTimer = setTimeout(() => this.flush(), 500);
+        },
+
+        flush() {
+          if (this.inflight || this.pending.length === 0) return;
+          const batch = this.pending.splice(0, this.pending.length);
+          this.inflight = batch;
+          batch.forEach(u => setSyncStatus(u.rowNumber, 'syncing'));
+
+          google.script.run
+            .withSuccessHandler((result) => {
+              batch.forEach(u => setSyncStatus(u.rowNumber, 'synced'));
+              this.inflight = null;
+              if (this.pending.length > 0) this.flush();
+            })
+            .withFailureHandler((err) => {
+              console.error('Sync error:', err);
+              batch.forEach(u => setSyncStatus(u.rowNumber, 'error'));
+              this.pending.unshift(...batch);
+              this.inflight = null;
+              setTimeout(() => this.flush(), 3000);
+            })
+            .updateChernRowBatchFromWeb(batch.map(u => ({
+              chernRow: u.chernRow,
+              updates: u.updates
+            })), context.chernSheetName || '');
+        }
+      };
+
+      function setSyncStatus(rowNumber, status) {
+        const row = rows.find(r => r.rowNumber === rowNumber);
+        if (row) row.syncStatus = status;
+        const td = document.querySelector(`tr[data-row-number="${rowNumber}"] .col-sync`);
+        if (td && row) {
+          td.innerHTML = renderSyncCell(row);
+        }
+      }
+
+      /**
+       * Пробрасывает изменения из модалки в ЧЕРНОВИК.
+       * Существующие строки (с chernRow) — через SyncQueue.
+       * Новые строки (без chernRow) — через appendChernRowsFromWeb.
+       */
+      function syncModalChangesToChern(payload) {
+        // Для нового короба: manual = используем введённый полный номер; auto = склеиваем префикс с shortNumber.
+        const finalBoxNumber = payload.isNewBox
+          ? (payload.box.numberMode === 'manual'
+              ? String(payload.box.boxNumber || '').trim()
+              : formatBoxNumber(payload.box.shortNumber))
+          : modal.currentBox.boxNumber;
+
+        // Находим обновлённые строки в rows[] по box number
+        const boxRows = rows.filter(r => r.box === finalBoxNumber);
+
+        // Разделяем на существующие (chernRow > 0) и новые (chernRow <= 0 или null)
+        const existingRows = boxRows.filter(r => r.chernRow && r.chernRow > 0);
+        const newRows = boxRows.filter(r => !r.chernRow || r.chernRow <= 0);
+
+        // Пушим изменения для существующих строк
+        existingRows.forEach(r => {
+          SyncQueue.push({
+            rowNumber: r.rowNumber,
+            chernRow: r.chernRow,
+            updates: {
+              verified: r.verified,
+              qty: r.newQty != null ? r.newQty : undefined,
+              note: r.note || undefined,
+              newAddress: r.changeFlags && r.changeFlags.address ? (r.newAddress || r.address) : undefined,
+              newStatus: r.changeFlags && r.changeFlags.status ? (r.newStatus || r.status) : undefined,
+              newType: r.changeFlags && r.changeFlags.type ? (r.newType || r.type) : undefined,
+              newTara: r.changeFlags && r.changeFlags.tara ? (r.newTara || r.tara) : undefined
+            }
+          });
+        });
+
+        // Добавляем новые строки через отдельный API
+        if (newRows.length > 0 && context.reportId) {
+          const appendData = newRows.map(r => ({
+            address: r.address || '', type: r.type || '', sku: r.sku || '',
+            tara: r.tara || '', status: r.status || '', box: r.box || '',
+            skuCount: r.skuCount || 0, totalQty: r.totalQty || 0,
+            barcode: r.barcode || '', qty: r.qty || 0,
+            verified: r.verified || false, note: r.note || '',
+            newQty: r.newQty, newAddress: r.newAddress || '',
+            newStatus: r.newStatus || '', newType: r.newType || '',
+            newTara: r.newTara || ''
+          }));
+
+          // Отмечаем как syncing
+          newRows.forEach(r => setSyncStatus(r.rowNumber, 'syncing'));
+
+          google.script.run
+            .withSuccessHandler(function(result) {
+              // Обновляем chernRow для добавленных строк (чтобы дальше SyncQueue мог их обновлять)
+              if (result.startRow > 0) {
+                newRows.forEach((r, idx) => {
+                  r.chernRow = result.startRow + idx;
+                  setSyncStatus(r.rowNumber, 'synced');
+                });
+              }
+            })
+            .withFailureHandler(function(err) {
+              console.error('Append error:', err);
+              newRows.forEach(r => setSyncStatus(r.rowNumber, 'error'));
+            })
+            .appendChernRowsFromWeb(appendData, context.reportId, context.chernSheetName || '');
+        }
+      }
+
+      // ===== Стартовый экран =====
+      function initStartScreen() {
+        document.getElementById('startScreen').style.display = '';
+        document.getElementById('workScreen').style.display = 'none';
+
+        // Показать активные сессии
+        const sessions = context.activeSessions || [];
+        if (sessions.length > 0) {
+          document.getElementById('activeSessionsPanel').style.display = '';
+          const list = document.getElementById('activeSessionsList');
+          list.innerHTML = sessions.map(s =>
+            `<div style="padding:8px; margin-bottom:6px; background:var(--bg); border:1px solid var(--line); border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+              <div><strong>${escapeHtml(s.client)}</strong> — ${escapeHtml(s.type)} <span class="muted">(${escapeHtml(s.executor)})</span></div>
+              <a class="button primary" href="${context.baseUrl}?report=${encodeURIComponent(s.reportId)}">Продолжить</a>
+            </div>`
+          ).join('');
+        }
+
+        // Загрузить заявки (с индикатором загрузки)
+        document.getElementById('zayavkaLoading').style.display = 'flex';
+        document.getElementById('zayavkaForm').style.display = 'none';
+        document.getElementById('zayavkaError').style.display = 'none';
+
+        google.script.run
+          .withSuccessHandler(function(zayavki) {
+            document.getElementById('zayavkaLoading').style.display = 'none';
+            const list = zayavki || [];
+            if (list.length === 0) {
+              var errEl = document.getElementById('zayavkaError');
+              if (sessions.length > 0) {
+                errEl.style.color = 'var(--muted)';
+                errEl.textContent = 'Новых заявок нет. Можно продолжить активную сессию выше.';
+              } else {
+                errEl.style.color = 'var(--err-line)';
+                errEl.textContent = 'Нет доступных заявок (статус СОЗДАНО).';
+              }
+              errEl.style.display = '';
+              return;
+            }
+            document.getElementById('zayavkaForm').style.display = '';
+            const sel = document.getElementById('zayavkaSelect');
+            sel.innerHTML = '<option value="">— Выберите заявку —</option>';
+            list.forEach(z => {
+              const opt = document.createElement('option');
+              opt.value = z.id;
+              opt.textContent = z.id + ' — ' + z.client + ' (' + z.type + ')' + (z.deadline ? ' до ' + z.deadline : '');
+              opt.dataset.client = z.client;
+              opt.dataset.type = z.type;
+              opt.dataset.priority = z.priority;
+              opt.dataset.deadline = z.deadline || '';
+              sel.appendChild(opt);
+            });
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('zayavkaLoading').style.display = 'none';
+            document.getElementById('zayavkaError').textContent = 'Ошибка загрузки: ' + (err.message || err);
+            document.getElementById('zayavkaError').style.display = '';
+          })
+          .getAvailableZayavkiFromWeb();
+      }
+
+      function onZayavkaChange() {
+        const sel = document.getElementById('zayavkaSelect');
+        const opt = sel.selectedOptions[0];
+        const info = document.getElementById('zayavkaInfo');
+        const topBtn = document.getElementById('topStartBtn');
+
+        if (!sel.value) {
+          info.style.display = 'none';
+          topBtn.disabled = true;
+          document.getElementById('startScreenTitle').style.display = '';
+          document.getElementById('workScreen').style.display = 'none';
+          document.getElementById('previewActions').style.display = 'none';
+          document.getElementById('clientInfoPanel').style.display = 'none';
+          previewMode = false;
+          selectedZayavkaId = null;
+          rows = [];
+          return;
+        }
+
+        info.style.display = '';
+        const deadline = opt.dataset.deadline ? ' | дедлайн: ' + escapeHtml(opt.dataset.deadline) : '';
+        info.innerHTML = '<strong>' + escapeHtml(opt.dataset.client) + '</strong> — ' + escapeHtml(opt.dataset.type) + ' (приоритет: ' + escapeHtml(opt.dataset.priority) + ')' + deadline;
+        selectedZayavkaId = sel.value;
+        loadPreview(sel.value);
+      }
+
+      function loadPreview(zayavkaId) {
+        previewMode = true;
+        // Скрываем заголовок стартового экрана (чтобы не дублировался), показываем рабочий
+        document.getElementById('startScreenTitle').style.display = 'none';
+        document.getElementById('workScreen').style.display = '';
+        document.getElementById('previewActions').style.display = '';
+        document.getElementById('workActions').style.display = 'none';
+        document.getElementById('topStartBtn').disabled = true;
+        // Обновляем инфо о клиенте из выбранной заявки
+        var selOpt = document.getElementById('zayavkaSelect').selectedOptions[0];
+        if (selOpt) {
+          var cip = document.getElementById('clientInfoPanel');
+          cip.style.display = '';
+          document.getElementById('clientInfoName').textContent = selOpt.dataset.client || '';
+          document.getElementById('clientInfoReport').textContent = zayavkaId || '';
+        }
+        // Спиннер в таблице
+        document.getElementById('rowsBody').innerHTML = '<tr><td colspan="11" style="text-align:center;padding:30px;"><div class="spinner" style="margin:0 auto;"></div><div class="muted" style="margin-top:8px;">Загрузка коробов из таблицы...</div></td></tr>';
+        document.getElementById('statRows').textContent = '...';
+        document.getElementById('statVerified').textContent = '...';
+        document.getElementById('statRemaining').textContent = '...';
+
+        google.script.run
+          .withSuccessHandler(function(data) {
+            rows = data.rows || [];
+            if (rows.length === 0) {
+              document.getElementById('rowsBody').innerHTML = '<tr><td colspan="11" class="empty" style="text-align:center;padding:20px;">Нет коробов для этого клиента.</td></tr>';
+              document.getElementById('statRows').textContent = '0';
+              document.getElementById('statVerified').textContent = '0';
+              document.getElementById('statRemaining').textContent = '0';
+              return;
+            }
+            document.getElementById('topStartBtn').disabled = false;
+            renderStats();
+            fillSelect('statusFilter', uniqueValues(rows.map(r => r.status)));
+            fillSelect('taraFilter', uniqueValues(rows.map(r => r.tara)));
+            fillSelect('addressFilter', uniqueValues(rows.map(r => r.address)));
+            initDefaultGroup();
+            renderRows();
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('rowsBody').innerHTML = '<tr><td colspan="11" class="empty" style="text-align:center;padding:20px;color:var(--err-line);">' + escapeHtml(err.message || 'Ошибка загрузки') + '</td></tr>';
+          })
+          .getPreviewBoxesFromWeb(zayavkaId);
+      }
+
+      function openStartModal() {
+        document.getElementById('startOverlay').classList.add('show');
+        document.getElementById('startError').style.display = 'none';
+        document.getElementById('startSpinner').style.display = 'none';
+        document.getElementById('startModalFooter').style.display = '';
+        document.querySelectorAll('#startOverlay button').forEach(b => b.disabled = false);
+        setTimeout(() => document.getElementById('employeeInput').focus(), 100);
+      }
+
+      function closeStartModal() {
+        document.getElementById('startOverlay').classList.remove('show');
+      }
+
+      function confirmStartInvent() {
+        const name = document.getElementById('employeeInput').value.trim();
+        if (!name) {
+          document.getElementById('startError').textContent = 'Введите имя сотрудника';
+          document.getElementById('startError').style.display = '';
+          return;
+        }
+        document.getElementById('startError').style.display = 'none';
+        document.getElementById('startSpinner').style.display = '';
+        // Блокируем кнопки
+        document.querySelectorAll('#startOverlay button').forEach(b => b.disabled = true);
+
+        const zayavkaId = document.getElementById('zayavkaSelect').value;
+        google.script.run
+          .withSuccessHandler(function(result) {
+            document.querySelector('#startSpinner .muted').textContent =
+              'Загружено строк: ' + (result.rowCount || 0) + ', коробов: ' + (result.boxCount || 0) + '. Переход...';
+            setTimeout(function() {
+              window.location.href = context.baseUrl + '?report=' + encodeURIComponent(result.reportId);
+            }, 600);
+          })
+          .withFailureHandler(function(err) {
+            document.getElementById('startSpinner').style.display = 'none';
+            document.querySelectorAll('#startOverlay button').forEach(b => b.disabled = false);
+            document.getElementById('startError').textContent = err.message || 'Ошибка запуска';
+            document.getElementById('startError').style.display = '';
+          })
+          .startInventSessionFromWeb(zayavkaId, name);
+      }
+
+      // ===== Инициализация =====
+      function init() {
+        const viewMode = context.viewMode || 'legacy';
+
+        if (viewMode === 'start') {
+          initStartScreen();
+          // workScreen скрыт — покажется при выборе заявки (loadPreview)
+          return;
+        }
+
+        // viewMode = 'work' или 'legacy'
+        document.getElementById('startScreen').style.display = 'none';
+        document.getElementById('workScreen').style.display = '';
+        document.getElementById('workActions').style.display = '';
+        document.getElementById('previewActions').style.display = 'none';
+        previewMode = false;
+
+        // Показываем инфо о клиенте
+        if (context.clientName || context.reportId) {
+          var cip = document.getElementById('clientInfoPanel');
+          cip.style.display = '';
+          document.getElementById('clientInfoName').textContent = context.clientName || '';
+          document.getElementById('clientInfoReport').textContent = context.chernSheetName ? ('Отчёт: ' + context.chernSheetName) : '';
+        }
+
+        if (viewMode === 'legacy') {
+          restoreDraftState();
+        }
+
+        renderStats();
+        fillSelect('statusFilter', uniqueValues(rows.map(row => row.status)));
+        fillSelect('taraFilter', uniqueValues(rows.map(row => row.tara)));
+        fillSelect('addressFilter', uniqueValues(rows.map(row => row.address)));
+        initDefaultGroup();
+        renderRows();
+      }
+
+      // Дефолт при первой загрузке: автовыбираем первый доступный баркод (плитка bar5).
+      // Заявки оставляем без выбора — фильтрация по одному условию.
+      function initDefaultGroup() {
+        if (selectedBar5 != null || selectedZayavka != null) return;
+        const tiles = computeBar5Tiles();
+        if (tiles.length) selectedBar5 = tiles[0].key;
+      }
+
+      function persistDraftState() {
+        try {
+          localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({
+            rows,
+            draftRowCounter,
+            savedAt: Date.now()
+          }));
+        } catch (err) {
+          console.error('Failed to persist draft state:', err);
+        }
+      }
+
+      function restoreDraftState() {
+        try {
+          const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.rows)) {
+            rows = parsed.rows;
+          }
+          if (parsed && Number.isFinite(Number(parsed.draftRowCounter))) {
+            draftRowCounter = Number(parsed.draftRowCounter);
+          }
+        } catch (err) {
+          console.error('Failed to restore draft state:', err);
+        }
+      }
+
+      function clearDraftState() {
+        try {
+          localStorage.removeItem(DRAFT_STORAGE_KEY);
+        } catch (err) {
+          console.error('Failed to clear draft state:', err);
+        }
+      }
+
+      function fillModalSelect(id, values) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Выбери</option>';
+        values.forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          select.appendChild(option);
+        });
+      }
+
+      function fillSelect(id, values) {
+        const select = document.getElementById(id);
+        select.innerHTML = '<option value="">Все</option>';
+        values.forEach(value => {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = value;
+          select.appendChild(option);
+        });
+      }
+
+      function uniqueValues(values) {
+        return [...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), 'ru'));
+      }
+
+      function renderStats() {
+        document.getElementById('statRows').textContent = rows.length;
+        const verifiedCount = rows.filter(row => row.verified).length;
+        document.getElementById('statVerified').textContent = verifiedCount;
+        document.getElementById('statRemaining').textContent = Math.max(0, rows.length - verifiedCount);
+        const finalizeBtn = document.getElementById('finalizeBtn');
+        const canFinalize = rows.length > 0 && rows.every(row => row.verified);
+        finalizeBtn.disabled = !canFinalize;
+      }
+
+      function toggleSort(key) {
+        if (sortKey === key) {
+          if (sortDir === 'asc') { sortDir = 'desc'; }
+          else { sortKey = ''; sortDir = 'asc'; } // third click — reset
+        } else {
+          sortKey = key;
+          sortDir = 'asc';
+        }
+        // Update header indicators
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+          th.classList.remove('sort-asc', 'sort-desc');
+          if (th.dataset.sort === sortKey) {
+            th.classList.add(sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+          }
+        });
+        renderRows();
+      }
+
+      function getSortValue(row, key) {
+        switch (key) {
+          case 'address': return row.address || '';
+          case 'tara': return row.tara || '';
+          case 'status': return row.status || '';
+          case 'box': return row.box || '';
+          case 'type': return row.type || '';
+          case 'skucount': return Number(row.skuCount) || 0;
+          case 'total': return Number(row.totalQty) || 0;
+          case 'barcode': return row.barcode || '';
+          case 'qty': return Number(row.newQty != null ? row.newQty : row.qty) || 0;
+          case 'sku': return row.sku || '';
+          case 'verified': return row.verified ? 1 : 0;
+          default: return '';
+        }
+      }
+
+      // ===== Группировка: bar5 (последние 5 цифр баркода) и zayavka (первые 5 символов короба, или "ЯЧ" для ячеек) =====
+      function rowBar5(row) {
+        const b = String(row.barcode || '');
+        return b.length >= 5 ? b.slice(-5) : b || '—';
+      }
+      function rowZayavka(row) {
+        // Ячейки определяются по таре, не по префиксу — см. CONST/02_BUSINESS_PROCESSES.md § Структура номера короба.
+        if (String(row.tara || '').trim().toUpperCase() === 'ЯЧ') return YACH_GROUP;
+        const b = String(row.box || '');
+        return b.length >= 5 ? b.slice(0, 5) : (b || '—');
+      }
+
+      // Базовая фильтрация: search + остальные select-фильтры. БЕЗ учёта плиток-групп.
+      function rowsAfterBaseFilters() {
+        const search = document.getElementById('searchInput').value.trim().toLowerCase();
+        const statusFilter = document.getElementById('statusFilter').value;
+        const taraFilter = document.getElementById('taraFilter').value;
+        const addressFilter = document.getElementById('addressFilter').value;
+        const verifiedFilter = document.getElementById('verifiedFilter').value;
+
+        return rows.filter(row => {
+          if (search) {
+            const hay = [row.box, row.sku, row.barcode, row.address].join(' ').toLowerCase();
+            if (!hay.includes(search)) return false;
+          }
+          if (statusFilter && row.status !== statusFilter) return false;
+          if (taraFilter && row.tara !== taraFilter) return false;
+          if (addressFilter && row.address !== addressFilter) return false;
+          if (verifiedFilter === 'yes' && !row.verified) return false;
+          if (verifiedFilter === 'no' && row.verified) return false;
+          return true;
+        });
+      }
+
+      function applySort(arr) {
+        if (!sortKey) return arr;
+        const numeric = ['skucount', 'total', 'qty', 'verified'].includes(sortKey);
+        const dir = sortDir === 'asc' ? 1 : -1;
+        return arr.slice().sort((a, b) => {
+          const va = getSortValue(a, sortKey);
+          const vb = getSortValue(b, sortKey);
+          if (numeric) return (va - vb) * dir;
+          return String(va).localeCompare(String(vb), 'ru') * dir;
+        });
+      }
+
+      // Видимые строки: проходят базовые фильтры И обе плитки-группы (если выбраны).
+      function getVisibleRows() {
+        const base = rowsAfterBaseFilters();
+        if (selectedBar5 == null && selectedZayavka == null) {
+          // Cross-filter: пока ни одна плитка не выбрана, таблицу не показываем —
+          // см. UX-логику в обсуждении. Возвращаем [], показываем emptyState.
+          return [];
+        }
+        const filtered = base.filter(r => {
+          if (selectedBar5 != null && rowBar5(r) !== selectedBar5) return false;
+          if (selectedZayavka != null && rowZayavka(r) !== selectedZayavka) return false;
+          return true;
+        });
+        return applySort(filtered);
+      }
+
+      // Доступные плитки для одной из лент (cross-filter учитывает ВЫБРАННОЕ значение ДРУГОЙ ленты,
+      // но НЕ своё собственное — иначе нельзя было бы переключаться внутри ленты).
+      function computeBar5Tiles() {
+        const base = rowsAfterBaseFilters().filter(r => {
+          if (selectedZayavka != null && rowZayavka(r) !== selectedZayavka) return false;
+          return true;
+        });
+        const counts = new Map();
+        base.forEach(r => {
+          const k = rowBar5(r);
+          counts.set(k, (counts.get(k) || 0) + 1);
+        });
+        return Array.from(counts.entries())
+          .map(([key, count]) => ({ key, count }))
+          .sort((a, b) => a.key.localeCompare(b.key, 'ru'));
+      }
+      function computeZayavkaTiles() {
+        const base = rowsAfterBaseFilters().filter(r => {
+          if (selectedBar5 != null && rowBar5(r) !== selectedBar5) return false;
+          return true;
+        });
+        const counts = new Map();
+        base.forEach(r => {
+          const k = rowZayavka(r);
+          counts.set(k, (counts.get(k) || 0) + 1);
+        });
+        // ЯЧ всегда первой (если есть), остальные по алфавиту.
+        return Array.from(counts.entries())
+          .map(([key, count]) => ({ key, count }))
+          .sort((a, b) => {
+            if (a.key === YACH_GROUP) return -1;
+            if (b.key === YACH_GROUP) return 1;
+            return a.key.localeCompare(b.key, 'ru');
+          });
+      }
+
+      function renderTiles(containerId, tiles, selectedKey, onPick) {
+        const el = document.getElementById(containerId);
+        if (!el) return;
+        if (!tiles.length) {
+          el.innerHTML = '<span class="groups-tiles-empty">нет доступных групп</span>';
+          updateTilesOverflow(containerId);
+          return;
+        }
+        el.innerHTML = tiles.map(t => {
+          const active = t.key === selectedKey;
+          const yach = t.key === YACH_GROUP ? ' is-yach' : '';
+          return `<button type="button" class="group-tile${active ? ' is-active' : ''}${yach}"
+            data-key="${escapeHtml(t.key)}"
+            role="tab" aria-selected="${active}">
+            ${escapeHtml(t.key)}
+            <span class="gt-count">${t.count}</span>
+          </button>`;
+        }).join('');
+        el.onclick = (e) => {
+          const btn = e.target.closest('.group-tile');
+          if (!btn) return;
+          onPick(btn.dataset.key);
+        };
+        // Обновляем overflow-state после рендера + автоскролл к выбранной плитке.
+        requestAnimationFrame(() => {
+          scrollSelectedIntoView(containerId);
+          updateTilesOverflow(containerId);
+        });
+      }
+
+      // Стрелки появляются (через .has-overflow на .groups-row), только когда лента шире wrap'а.
+      // disabled — на крайних позициях скролла.
+      function updateTilesOverflow(tilesId) {
+        const tiles = document.getElementById(tilesId);
+        if (!tiles) return;
+        const row = tiles.closest('.groups-row');
+        if (!row) return;
+        const overflow = tiles.scrollWidth > tiles.clientWidth + 1;
+        row.classList.toggle('has-overflow', overflow);
+        const left = row.querySelector('.tiles-nav-left');
+        const right = row.querySelector('.tiles-nav-right');
+        if (left) left.disabled = !overflow || tiles.scrollLeft <= 0;
+        if (right) right.disabled = !overflow || (tiles.scrollLeft + tiles.clientWidth) >= tiles.scrollWidth - 1;
+      }
+
+      function scrollTilesRow(tilesId, dir) {
+        const tiles = document.getElementById(tilesId);
+        if (!tiles) return;
+        const step = Math.max(120, tiles.clientWidth * 0.8);
+        tiles.scrollBy({ left: dir * step, behavior: 'smooth' });
+        // disable-state обновится после анимации скролла.
+        setTimeout(() => updateTilesOverflow(tilesId), 350);
+      }
+
+      function scrollSelectedIntoView(tilesId) {
+        const tiles = document.getElementById(tilesId);
+        if (!tiles) return;
+        const active = tiles.querySelector('.group-tile.is-active');
+        if (!active) return;
+        const tilesRect = tiles.getBoundingClientRect();
+        const activeRect = active.getBoundingClientRect();
+        if (activeRect.left < tilesRect.left || activeRect.right > tilesRect.right) {
+          active.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+        }
+      }
+
+      // Реагируем на ресайз окна — пересчитываем стрелки.
+      window.addEventListener('resize', () => {
+        updateTilesOverflow('bar5Tiles');
+        updateTilesOverflow('zayavkaTiles');
+      });
+      // Реагируем на скролл самой ленты — пересчитываем enabled-состояние стрелок.
+      document.addEventListener('scroll', (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains('groups-tiles')) {
+          updateTilesOverflow(e.target.id);
+        }
+      }, true);
+
+      function pickBar5(key) {
+        // Двойной тап = снять фильтр.
+        selectedBar5 = (selectedBar5 === key) ? null : key;
+        renderRows();
+      }
+      function pickZayavka(key) {
+        selectedZayavka = (selectedZayavka === key) ? null : key;
+        renderRows();
+      }
+      function resetGroupFilters() {
+        selectedBar5 = null;
+        selectedZayavka = null;
+        // Дефолт после сброса: автовыбор первой доступной плитки баркода.
+        const bar5Tiles = computeBar5Tiles();
+        if (bar5Tiles.length) selectedBar5 = bar5Tiles[0].key;
+        renderRows();
+      }
+
+      function handleFilterChange() {
+        // При смене search/select-фильтров проверяем, что текущий выбор групп ещё валиден.
+        const bar5List = computeBar5Tiles().map(t => t.key);
+        const zayList  = computeZayavkaTiles().map(t => t.key);
+        if (selectedBar5 != null && !bar5List.includes(selectedBar5)) selectedBar5 = null;
+        if (selectedZayavka != null && !zayList.includes(selectedZayavka)) selectedZayavka = null;
+        // Если ничего не выбрано — авто-выбор первого баркода (как при первой загрузке).
+        if (selectedBar5 == null && selectedZayavka == null && bar5List.length) {
+          selectedBar5 = bar5List[0];
+        }
+        renderRows();
+      }
+
+      function renderSyncCell(row) {
+        const status = row.syncStatus || '';
+        if (!status) return '';
+        // Synced with changes → checkmark; synced without changes → green dot
+        if (status === 'synced' && (row.hasChanges || row.isNewDraft)) {
+          return `<span class="sync-dot sync-synced-changed" title="Синхронизировано (с изменениями)"></span>`;
+        }
+        return `<span class="sync-dot sync-${status}" title="${{'connected':'Связано','syncing':'Синхронизация...','synced':'Синхронизировано','error':'Ошибка'}[status] || ''}"></span>`;
+      }
+
+      function renderQty(row) {
+        if (row.changeFlags.qty && row.newQty != null) {
+          return `<span class="qty-change"><span class="qty-old">${escapeHtml(row.baseQty)}</span><span class="qty-arrow">&rarr;</span><span>${escapeHtml(row.newQty)}</span></span>`;
+        }
+        return escapeHtml(row.qty ?? '');
+      }
+
+      function renderBarcode(barcode) {
+        const s = String(barcode || '');
+        if (s.length <= 5) return `<span class="barcode-tail">${escapeHtml(s)}</span>`;
+        return `<span class="barcode-prefix">${escapeHtml(s.slice(0, -5))}</span><span class="barcode-tail">${escapeHtml(s.slice(-5))}</span>`;
+      }
+
+      function renderRows() {
+        // Сначала плитки — они отражают cross-filter и могут поменять auto-selected ключ.
+        renderTiles('bar5Tiles', computeBar5Tiles(), selectedBar5, pickBar5);
+        renderTiles('zayavkaTiles', computeZayavkaTiles(), selectedZayavka, pickZayavka);
+
+        const body = document.getElementById('rowsBody');
+        body.innerHTML = '';
+        const visible = getVisibleRows();
+        const emptyEl = document.getElementById('emptyState');
+        if (!visible.length) {
+          emptyEl.style.display = 'block';
+          emptyEl.textContent = (selectedBar5 == null && selectedZayavka == null)
+            ? 'Ничего не выбрано в группах. Кликните по плитке баркода или заявки.'
+            : 'По текущим фильтрам и группам строки не найдены.';
+          return;
+        }
+        emptyEl.style.display = 'none';
+
+        let prevBox = null;
+        visible.forEach((row, idx) => {
+          const tr = document.createElement('tr');
+          tr.className = getRowClass(row);
+          const isBoxStart = idx === 0 || (row.box || '') !== (prevBox || '');
+          if (isBoxStart) tr.classList.add('box-start');
+          prevBox = row.box || '';
+          tr.dataset.rowNumber = row.rowNumber;
+
+          const boxCell = previewMode
+            ? `<span class="box-text">${escapeHtml(row.box || '')}</span>`
+            : `<a class="box-link" href="${context.baseUrl}?view=edit&row=${row.rowNumber}" onclick="openRow(event, ${row.rowNumber})"><span class="box-text">${escapeHtml(row.box || '')}</span></a>`;
+          const checkCell = previewMode
+            ? `<input class="checkbox" type="checkbox" disabled>`
+            : `<input class="checkbox" type="checkbox" ${row.verified ? 'checked' : ''} onclick="stopCheckboxClick(event)" onchange="toggleVerified(event, ${row.rowNumber}, this.checked)">`;
+          tr.innerHTML = `
+            <td class="col-sync">${renderSyncCell(row)}</td>
+            <td class="col-addr">${escapeHtml(row.address || '')}</td>
+            <td class="col-tara">${renderCell(row.tara || '', false)}</td>
+            <td class="col-status">${renderStatus(row.isNewDraft ? 'NEW' : (row.status || ''), false)}</td>
+            <td class="col-box">${boxCell}</td>
+            <td class="col-type">${renderCell(row.type || '', false)}</td>
+            <td class="col-skucount">${row.skuCount ?? ''}</td>
+            <td class="col-total">${row.totalQty ?? ''}</td>
+            <td class="col-barcode">${row.changeFlags.qty && Number(row.qty) === 0 ? '<s>' + renderBarcode(row.barcode) + '</s>' : renderBarcode(row.barcode)}</td>
+            <td class="col-qty">${renderQty(row)}</td>
+            <td class="col-sku">${escapeHtml(row.sku || '')}</td>
+            <td class="col-check">${checkCell}</td>
+          `;
+          body.appendChild(tr);
+        });
+      }
+
+      function getRowClass(row) {
+        if (row.err === 'OK') return 'row-ok';
+        if (row.err) return 'row-error';
+        return '';
+      }
+
+      function statusClass(status) {
+        return `status-${String(status || '').replace(/\s+/g, '-')}`;
+      }
+
+      function renderCell(value, strike) {
+        const className = strike ? 'strike' : '';
+        return `<span class="${className}">${escapeHtml(value)}</span>`;
+      }
+
+      function renderStatus(value, strike) {
+        const inner = escapeHtml(value || '');
+        const strikeClass = strike ? ' strike' : '';
+        return `<span class="status-pill ${statusClass(value)}${strikeClass}">${inner}</span>`;
+      }
+
+      function openFinalizeModal() {
+        const verifiedRows = rows.filter(row => row.verified).length;
+        const totalRows = rows.length;
+        const totalBoxes = new Set(rows.map(row => row.box)).size;
+        const changedRows = rows.filter(r => r.hasChanges).length;
+        document.getElementById('finalizeSummary').innerHTML =
+          `Проверено строк: <strong>${verifiedRows}</strong> из <strong>${totalRows}</strong>.<br>` +
+          `Коробов в отчёте: <strong>${totalBoxes}</strong>.<br>` +
+          `Строк с изменениями: <strong>${changedRows}</strong>.<br><br>` +
+          `Формулы будут заменены на значения, лист будет скрыт. Продолжить?`;
+        document.getElementById('finalizeOverlay').classList.add('show');
+      }
+
+      function closeFinalizeModal() {
+        document.getElementById('finalizeOverlay').classList.remove('show');
+      }
+
+      function confirmFinalize() {
+        closeFinalizeModal();
+        if (!context.reportId) {
+          alert('Нет reportId — невозможно завершить.');
+          return;
+        }
+        var btn = document.getElementById('finalizeBtn');
+        btn.disabled = true;
+        btn.textContent = 'Завершение...';
+
+        // Показываем полноэкранный оверлей с прогрессом
+        var ov = document.getElementById('finalizeProgressOverlay');
+        var icon = document.getElementById('finalizeProgressIcon');
+        var title = document.getElementById('finalizeProgressTitle');
+        var text = document.getElementById('finalizeProgressText');
+
+        ov.classList.add('show');
+        icon.innerHTML = '<div class="spinner"></div>';
+        title.textContent = 'Завершение отчёта';
+        text.textContent = 'Сохраняем данные, пересчитываем формулы...';
+
+        // Анимация этапов
+        var steps = [
+          { delay: 2000, text: 'Обновляем статусы в ОТЧЕТЫ и ЗАЯВКИ...' },
+          { delay: 5000, text: 'Синхронизируем изменения в базу коробов...' },
+          { delay: 9000, text: 'Записываем новые коробы, проверяем целостность...' }
+        ];
+        var timers = [];
+        steps.forEach(function(step) {
+          timers.push(setTimeout(function() { text.textContent = step.text; }, step.delay));
+        });
+
+        google.script.run
+          .withSuccessHandler(function(result) {
+            timers.forEach(clearTimeout);
+            if (result && result.ok === false) {
+              // Ошибка синхронизации — показываем красный
+              icon.innerHTML = '<div style="font-size:40px; color:#c0392b;">✕</div>';
+              title.textContent = 'Ошибка';
+              title.style.color = '#c0392b';
+              text.textContent = result.message || 'Произошла ошибка при завершении.';
+              btn.disabled = false;
+              btn.textContent = 'Провести';
+              setTimeout(function() {
+                ov.classList.remove('show');
+                title.style.color = '';
+              }, 5000);
+              return;
+            }
+            // Успех — зелёная галочка
+            icon.innerHTML = '<div style="font-size:40px; color:#27ae60;">✓</div>';
+            title.textContent = 'Успешно завершено';
+            title.style.color = '#27ae60';
+            text.textContent = result.message || 'Отчёт проведён. Возвращаемся на главную...';
+            btn.textContent = 'Завершён';
+            // Через 2.5 секунды — возврат на главную
+            setTimeout(function() {
+              if (context.baseUrl) {
+                window.top.location.href = context.baseUrl;
+              } else {
+                ov.classList.remove('show');
+                title.style.color = '';
+              }
+            }, 2500);
+          })
+          .withFailureHandler(function(err) {
+            timers.forEach(clearTimeout);
+            icon.innerHTML = '<div style="font-size:40px; color:#c0392b;">✕</div>';
+            title.textContent = 'Ошибка';
+            title.style.color = '#c0392b';
+            text.textContent = err.message || 'Произошла ошибка.';
+            btn.disabled = false;
+            btn.textContent = 'Провести';
+            setTimeout(function() {
+              ov.classList.remove('show');
+              title.style.color = '';
+            }, 5000);
+          })
+          .finalizeReportFromWeb(context.reportId);
+      }
+
+      function openRow(event, rowNumber) {
+        if (event) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        openModal(rowNumber);
+      }
+
+      function toggleVerified(event, rowNumber, checked) {
+        event.stopPropagation();
+        const row = rows.find(item => item.rowNumber === rowNumber);
+        if (row) {
+          row.verified = Boolean(checked);
+        }
+        renderStats();
+
+        // В режиме work — синхронизируем через SyncQueue
+        if (context.viewMode === 'work' && row && row.chernRow) {
+          SyncQueue.push({
+            rowNumber: row.rowNumber,
+            chernRow: row.chernRow,
+            updates: { verified: Boolean(checked) }
+          });
+        } else {
+          persistDraftState();
+        }
+      }
+
+      function stopCheckboxClick(event) {
+        event.stopPropagation();
+      }
+      function escapeHtml(value) {
+        return String(value ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function last5OfBarcode(barcode) {
+        const s = String(barcode || '').trim();
+        return s.length <= 5 ? s : s.slice(-5);
+      }
+
+      // Returns HTML for readonly barcode display: prefix + last-5 emphasized + sku.
+      // Used for existing rows so they share format with new-item dropdown options.
+      function formatBarcodeDisplayHtml(barcode, sku) {
+        const s = String(barcode || '').trim();
+        const last5 = last5OfBarcode(s);
+        const prefix = s.length > 5 ? s.slice(0, -5) : '';
+        const skuPart = sku ? ' | ' + escapeHtml(sku) : '';
+        return `<span class="barcode-readonly-display">${escapeHtml(prefix)}<span class="last5">${escapeHtml(last5)}</span>${skuPart}</span>`;
+      }
+
+      // Single source of truth for option text in the new-item dropdown:
+      // [last5] FULL_BARCODE · COMPOSITE_SKU
+      function formatBarcodeOptionText(opt) {
+        const barcode = String(opt.barcode || '').trim();
+        const sku = String(opt.sku || '').trim();
+        const last5 = last5OfBarcode(barcode);
+        const tail = sku ? ' | ' + sku : '';
+        return `[${last5}] ${barcode}${tail}`;
+      }
+
+      let modal = {
+        currentBox: null,
+        currentRowNumber: null,
+        isNew: false,
+        items: [],
+        barcodeOptions: [],
+        typeOptions: [],
+        statusOptions: [],
+        newItemCounter: 0,
+        boxNumberExists: false,
+        boxNumberCheckTimer: null,
+        // 'auto' = старая схема (1-999, склейка с префиксом, e.g. VC007-042)
+        // 'manual' = пользователь вписывает полный номер существующей этикетки (e.g. P4715-03)
+        boxNumberMode: 'auto'
+      };
+
+      function setModalState(mode, text = '') {
+        const overlay = document.getElementById('modalState');
+        const icon = document.getElementById('modalStateIcon');
+        const title = document.getElementById('modalStateTitle');
+        const body = document.getElementById('modalStateText');
+
+        if (!mode) {
+          overlay.classList.remove('show');
+          icon.innerHTML = '';
+          title.textContent = '';
+          body.textContent = '';
+          return;
+        }
+
+        overlay.classList.add('show');
+        body.textContent = text || '';
+
+        if (mode === 'saving') {
+          icon.innerHTML = '<div class="spinner"></div>';
+          title.textContent = 'Сохранение данных';
+          return;
+        }
+
+        if (mode === 'success') {
+          icon.innerHTML = '<div class="success-check">✓</div>';
+          title.textContent = 'Сохранение завершено';
+          return;
+        }
+
+        icon.innerHTML = '<div class="success-check" style="background:#f9dddd;color:#a94442;">!</div>';
+        title.textContent = 'Ошибка сохранения';
+      }
+
+      const CANONICAL_STATUSES = ['ГОТОВО', 'В ПРИЕМКЕ', 'В УПАКОВКЕ', 'В РЕЗЕРВЕ', 'ХРАНЕНИЕ',
+        'СОБРАНО', 'ОТГРУЖЕНО', 'СПИСАНО', 'БРАК', 'ИЗЪЯТО', 'ОБЕЗЛИЧКА', 'ПЕРЕМАРК', 'ДЛИТ.ХРАН'];
+      const CANONICAL_TYPES = ['ПТ НА УП', 'ПТ без ЧЗ', 'УТ без ЧЗ', 'УТ не ГОТ', 'БРАК', 'ПТ ГОТОВ', 'УТ ГОТОВ'];
+      const CANONICAL_TARA = ['ПАЛ', 'ЯЧ',
+        'К_0,1', 'К_0,2', 'К_0,3', 'К_0,4', 'К_0,5', 'К_0,6', 'К_0,7', 'К_0,8', 'К_0,9', 'К_1,0',
+        'К_1,1', 'К_1,2', 'К_1,3', 'К_1,4', 'К_1,5', 'К_1,6', 'К_1,7', 'К_1,8', 'К_1,9', 'К_2,0'];
+
+      function mergeWithCanonical(dynamicArr, canonical) {
+        const merged = new Set(canonical);
+        dynamicArr.forEach(v => { if (v) merged.add(v); });
+        return [...merged].sort((a, b) => {
+          const ai = canonical.indexOf(a), bi = canonical.indexOf(b);
+          if (ai >= 0 && bi >= 0) return ai - bi;
+          if (ai >= 0) return -1;
+          if (bi >= 0) return 1;
+          return a.localeCompare(b, 'ru');
+        });
+      }
+
+      function getTypeOptionsFromRows() {
+        const dynamic = Array.from(new Set(rows.map(row => String(row.type || '').trim()).filter(Boolean)));
+        return mergeWithCanonical(dynamic, CANONICAL_TYPES);
+      }
+
+      function getStatusOptionsFromRows() {
+        const dynamic = Array.from(new Set(rows.map(row => String(row.status || '').trim()).filter(Boolean)));
+        return mergeWithCanonical(dynamic, CANONICAL_STATUSES);
+      }
+
+      // Client barcode catalog from ТОВАРЫ — loaded once per session
+      let clientBarcodeCache = null;
+      let clientBarcodeLoading = false;
+
+      function loadClientBarcodes() {
+        if (clientBarcodeCache || clientBarcodeLoading || !context.clientName) return Promise.resolve();
+        clientBarcodeLoading = true;
+        return new Promise((resolve) => {
+          google.script.run
+            .withSuccessHandler(function(data) {
+              clientBarcodeCache = data || [];
+              clientBarcodeLoading = false;
+              resolve();
+            })
+            .withFailureHandler(function(err) {
+              console.error('Failed to load client barcodes:', err);
+              clientBarcodeCache = [];
+              clientBarcodeLoading = false;
+              resolve();
+            })
+            .getClientBarcodesFromWeb(context.clientName);
+        });
+      }
+
+      function getBarcodeOptionsFromRows() {
+        const seen = new Set();
+        const options = [];
+
+        // 1. Barcodes from current inventory rows
+        rows.forEach(row => {
+          const barcode = String(row.barcode || '').trim();
+          if (!barcode || seen.has(barcode)) return;
+          seen.add(barcode);
+          options.push({
+            barcode,
+            type: String(row.type || '').trim(),
+            sku: String(row.sku || '').trim(),
+            source: 'inventory'
+          });
+        });
+
+        // 2. Merge client catalog barcodes (from ТОВАРЫ)
+        if (clientBarcodeCache) {
+          clientBarcodeCache.forEach(item => {
+            if (!item.barcode || seen.has(item.barcode)) return;
+            seen.add(item.barcode);
+            options.push({
+              barcode: item.barcode,
+              type: '',
+              sku: item.sku || '',
+              source: 'catalog'
+            });
+          });
+        }
+
+        return options.sort((a, b) => `${a.sku} ${a.barcode}`.localeCompare(`${b.sku} ${b.barcode}`, 'ru'));
+      }
+
+      function buildModalPayloadFromRows(rowNumber) {
+        const barcodeOptions = getBarcodeOptionsFromRows();
+        const typeOptions = getTypeOptionsFromRows();
+        const statusOptions = getStatusOptionsFromRows();
+
+        if (!rowNumber) {
+          return {
+            isNewBox: true,
+            box: {
+              boxNumber: '',
+              shortNumber: '',
+              type: typeOptions[0] || '',
+              status: statusOptions[0] || '',
+              tara: 'K_1,00',
+              address: '',
+              note: '',
+              skuCount: 0,
+              totalQty: 0
+            },
+            items: [],
+            barcodeOptions,
+            typeOptions,
+            statusOptions,
+            taraOptions: CANONICAL_TARA
+          };
+        }
+
+        const currentRow = rows.find(row => row.rowNumber === Number(rowNumber));
+        if (!currentRow || !currentRow.box) {
+          throw new Error('Не удалось найти данные короба в текущем списке.');
+        }
+
+        const boxRows = rows.filter(row => row.box === currentRow.box);
+        const firstNote = boxRows.map(row => String(row.note || '').trim()).find(Boolean) || '';
+
+        return {
+          isNewBox: false,
+          box: {
+            boxNumber: currentRow.box,
+            shortNumber: '',
+            type: String(currentRow.type || '').trim(),
+            status: String(currentRow.status || '').trim(),
+            tara: String(currentRow.tara || '').trim(),
+            address: String(currentRow.address || '').trim(),
+            note: firstNote,
+            skuCount: Number(currentRow.skuCount || 0),
+            totalQty: Number(currentRow.totalQty || 0)
+          },
+          items: boxRows.map(row => ({
+            rowNumber: row.rowNumber,
+            barcode: String(row.barcode || '').trim(),
+            qty: Number(row.qty || 0),
+            sku: String(row.sku || '').trim()
+          })),
+          barcodeOptions,
+          typeOptions,
+          statusOptions,
+          taraOptions: CANONICAL_TARA
+        };
+      }
+
+      async function openModal(rowNumber) {
+        setModalState(null);
+        document.getElementById('modalOverlay').classList.add('show');
+        document.getElementById('modalTitle').textContent = rowNumber ? 'Редактирование короба' : 'Создание нового короба';
+
+        // Load client catalog barcodes if not yet loaded
+        if (!clientBarcodeCache && context.clientName) {
+          document.getElementById('modalItems').innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div><div class="muted" style="margin-top:8px;">Загрузка каталога баркодов клиента...</div></div>';
+          await loadClientBarcodes();
+        }
+
+        try {
+          const payload = buildModalPayloadFromRows(rowNumber || null);
+          hydrateModal(payload, rowNumber || null);
+        } catch (err) {
+          console.error('Failed to build modal data from frontend rows:', err);
+          document.getElementById('modalItems').innerHTML = `<div class="empty">Не удалось подготовить данные: ${escapeHtml(err && err.message ? err.message : String(err))}</div>`;
+        }
+      }
+
+      function closeModal() {
+        setModalState(null);
+        document.getElementById('modalOverlay').classList.remove('show');
+        modal.currentBox = null;
+        modal.currentRowNumber = null;
+        modal.items = [];
+        document.getElementById('modalSaveBtn').disabled = false;
+        document.getElementById('modalSaveBtn').textContent = 'Сохранить';
+      }
+
+      function hydrateModal(payload, rowNumber) {
+        modal.isNew = payload.isNewBox === true;
+        modal.currentRowNumber = rowNumber;
+        modal.currentBox = payload.box || {
+          boxNumber: '',
+          shortNumber: '',
+          type: '',
+          status: '',
+          tara: '',
+          address: '',
+          note: ''
+        };
+        modal.barcodeOptions = payload.barcodeOptions || [];
+        modal.typeOptions = payload.typeOptions || [];
+        modal.statusOptions = payload.statusOptions || [];
+        modal.taraOptions = payload.taraOptions || [];
+        modal.boxNumberExists = false;
+        modal.newItemCounter = 0;
+
+        fillModalSelect('boxType', modal.typeOptions);
+        fillModalSelect('boxStatus', modal.statusOptions);
+        // (Тара выбирается через калькулятор: тип + габариты, datalist больше не нужен — см. блок .tara-calc.)
+
+        document.getElementById('modalTitle').textContent = modal.isNew
+          ? 'Создание нового короба'
+          : `Короб ${modal.currentBox.boxNumber}`;
+
+        const boxNumberField = document.getElementById('boxNumberField');
+        const boxNumberInput = document.getElementById('boxNumber');
+        const boxNumberManualInput = document.getElementById('boxNumberManual');
+        if (modal.isNew) {
+          boxNumberField.style.display = 'block';
+          // Сбрасываем режим к дефолту (auto) при каждом открытии создания нового короба.
+          modal.boxNumberMode = 'auto';
+          const autoRadio = document.querySelector('input[name="boxNumberMode"][value="auto"]');
+          if (autoRadio) autoRadio.checked = true;
+          boxNumberInput.value = modal.currentBox.shortNumber || '';
+          boxNumberManualInput.value = '';
+          boxNumberInput.oninput = () => {
+            checkModalBoxNumber();
+            updateBoxNumberPreview();
+          };
+          boxNumberManualInput.oninput = () => {
+            checkModalBoxNumber();
+            updateBoxNumberPreview();
+          };
+          applyBoxNumberModeUi();
+        } else {
+          boxNumberField.style.display = 'none';
+          boxNumberInput.value = '';
+          boxNumberManualInput.value = '';
+          boxNumberInput.oninput = null;
+          boxNumberManualInput.oninput = null;
+        }
+
+        updateBoxNumberPreview();
+
+        const boxTypeSelect = document.getElementById('boxType');
+        const boxStatusSelect = document.getElementById('boxStatus');
+        const boxTaraInput = document.getElementById('boxTara');
+        const boxAddressInput = document.getElementById('boxAddress');
+        const boxNoteInput = document.getElementById('boxNote');
+
+        boxTypeSelect.value = modal.currentBox.type || '';
+        boxStatusSelect.value = modal.currentBox.status || '';
+        boxAddressInput.value = modal.currentBox.address || '';
+
+        // Тара через калькулятор: парсим маркер [ТАРА: LxWxH см] из note, отдельно показываем чистый текст.
+        const taraInit = parseTaraDimsFromNote(modal.currentBox.note || '');
+        boxNoteInput.value = taraInit.cleanNote;
+        if (modal.isNew) {
+          // Новый короб — всегда дефолт 60×40×40 (К_1,0), тип «Короб». Пользователь может переключить тип/менять габариты.
+          setTaraType('korob');
+          applyTaraTypeUi('korob');
+          document.getElementById('boxTaraL').value = '60';
+          document.getElementById('boxTaraW').value = '40';
+          document.getElementById('boxTaraH').value = '40';
+          recalcTaraCode();
+        } else {
+          // Существующий короб — тип/габариты из текущей тары и маркера в note (если есть).
+          applyTaraInitialState(modal.currentBox.tara || '', modal.currentBox.note || '');
+        }
+
+        boxTypeSelect.onchange = () => renderModalItems();
+        boxStatusSelect.onchange = () => renderModalItems();
+        boxAddressInput.oninput = () => renderModalItems();
+        boxNoteInput.oninput = () => renderModalItems();
+
+        modal.items = (payload.items || []).map(item => ({
+          key: `row-${item.rowNumber}`,
+          rowNumber: item.rowNumber,
+          barcode: item.barcode,
+          qty: item.qty,
+          originalQty: item.qty,
+          sku: item.sku || '',
+          isNew: false,
+          qtyChanged: false
+        }));
+
+        renderModalItems();
+      }
+
+      // === Режимы ввода номера короба (auto/manual) — задача «короб с уже существующей этикеткой» ===
+      const MANUAL_BOX_NUMBER_RE = /^[A-Za-zА-Яа-я0-9]{1,8}-\d{1,4}$/;
+
+      // === Калькулятор тары ===
+      // Стандарт: К_1,0 = 60×40×40 см = 96000 см³ → coef = (L×W×H) / 96000.
+      // Источник правды: 1_CONST/02_BUSINESS_PROCESSES.md § «Тара и коэффициент».
+      const TARA_STANDARD_VOLUME = 60 * 40 * 40; // 96 000 см³
+      const TARA_DIMS_NOTE_RE = /\[ТАРА:\s*(\d{1,3})[×xх*](\d{1,3})[×xх*](\d{1,3})\s*см\]\s*\n?/i;
+
+      // Округляет coef до 2 знаков после запятой, отбрасывает хвостовые нули, формат «X,Y» / «X,YZ».
+      function formatCoefRu(coef) {
+        if (!Number.isFinite(coef) || coef <= 0) return '';
+        const rounded = Math.round(coef * 100) / 100;
+        // Целое → «N,0» (для совместимости с существующим списком К_1,0).
+        if (Number.isInteger(rounded)) return rounded.toFixed(1).replace('.', ',');
+        // Иначе — до 2 знаков, отбросить хвостовые нули.
+        return rounded.toFixed(2).replace(/0$/, '').replace('.', ',');
+      }
+
+      function buildTaraCodeKorob(L, W, H) {
+        const l = Number(L), w = Number(W), h = Number(H);
+        if (!l || !w || !h) return '';
+        const coef = (l * w * h) / TARA_STANDARD_VOLUME;
+        return 'К_' + formatCoefRu(coef);
+      }
+
+      function parseTaraDimsFromNote(note) {
+        const text = String(note || '');
+        const m = text.match(TARA_DIMS_NOTE_RE);
+        if (!m) return { L: '', W: '', H: '', cleanNote: text.trim() };
+        const cleanNote = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim();
+        return { L: m[1], W: m[2], H: m[3], cleanNote };
+      }
+
+      function injectTaraDimsToNote(cleanNote, L, W, H) {
+        const note = String(cleanNote || '').trim();
+        if (!L || !W || !H) return note;
+        const marker = '[ТАРА: ' + L + '×' + W + '×' + H + ' см]';
+        return note ? marker + '\n' + note : marker;
+      }
+
+      function getCurrentTaraType() {
+        const radio = document.querySelector('input[name="boxTaraType"]:checked');
+        return radio ? radio.value : 'korob';
+      }
+
+      function setTaraType(type) {
+        const radio = document.querySelector('input[name="boxTaraType"][value="' + type + '"]');
+        if (radio) radio.checked = true;
+      }
+
+      function applyTaraTypeUi(type) {
+        const dimsWrap = document.getElementById('taraDimsWrap');
+        const isKorob = type === 'korob';
+        dimsWrap.classList.toggle('is-disabled', !isKorob);
+        // Поля габаритов для палеты/ячейки сбрасываем чтобы не путать.
+        if (!isKorob) {
+          document.getElementById('boxTaraL').value = '';
+          document.getElementById('boxTaraW').value = '';
+          document.getElementById('boxTaraH').value = '';
+        }
+      }
+
+      function recalcTaraCode() {
+        const type = getCurrentTaraType();
+        const codeEl = document.getElementById('boxTaraCode');
+        const hintEl = document.getElementById('boxTaraHint');
+        const hidden = document.getElementById('boxTara');
+
+        let code = '';
+        let hint = '';
+
+        if (type === 'ПАЛ') {
+          code = 'ПАЛ';
+        } else if (type === 'ЯЧ') {
+          code = 'ЯЧ';
+        } else {
+          // korob
+          const L = document.getElementById('boxTaraL').value.trim();
+          const W = document.getElementById('boxTaraW').value.trim();
+          const H = document.getElementById('boxTaraH').value.trim();
+          code = buildTaraCodeKorob(L, W, H);
+          if (code) {
+            const vol = Number(L) * Number(W) * Number(H);
+            const coef = vol / TARA_STANDARD_VOLUME;
+            hint = '· ' + Math.round(coef * 100) / 100 + ' от стандарта 60×40×40';
+          } else {
+            hint = '· укажи габариты, чтобы вычислить коэффициент';
+          }
+        }
+
+        codeEl.textContent = code || '—';
+        hintEl.textContent = hint;
+        hidden.value = code;
+      }
+
+      function onBoxTaraTypeChange(type) {
+        applyTaraTypeUi(type);
+        recalcTaraCode();
+        renderModalItems();
+      }
+
+      function onBoxTaraDimChange() {
+        recalcTaraCode();
+        renderModalItems();
+      }
+
+      // Установить тип/габариты в калькулятор по текущему коду тары и note (с маркером, если есть).
+      // Существующие коды без маркера → тип=korob, габариты пустые, код сохраняется как есть в hidden input.
+      function applyTaraInitialState(currentTara, currentNote) {
+        const tara = String(currentTara || '').trim();
+        let type = 'korob';
+        if (tara === 'ПАЛ') type = 'ПАЛ';
+        else if (tara === 'ЯЧ') type = 'ЯЧ';
+
+        setTaraType(type);
+        applyTaraTypeUi(type);
+
+        if (type === 'korob') {
+          const dims = parseTaraDimsFromNote(currentNote);
+          document.getElementById('boxTaraL').value = dims.L || '';
+          document.getElementById('boxTaraW').value = dims.W || '';
+          document.getElementById('boxTaraH').value = dims.H || '';
+          // Если габариты не введены, но код тары уже задан — оставляем код в hidden как есть.
+          // Если габариты введены — пересчёт даст эквивалентный код.
+          if (dims.L && dims.W && dims.H) {
+            recalcTaraCode();
+          } else {
+            document.getElementById('boxTaraCode').textContent = tara || '—';
+            document.getElementById('boxTaraHint').textContent = tara
+              ? '· габариты не указаны — введи, чтобы пересчитать'
+              : '';
+            document.getElementById('boxTara').value = tara;
+          }
+        } else {
+          recalcTaraCode();
+        }
+      }
+
+      // Возвращает {note, dims:{L,W,H}|null} — для сборки итогового boxNote с маркером габаритов.
+      function getTaraDimsForSave() {
+        if (getCurrentTaraType() !== 'korob') return null;
+        const L = document.getElementById('boxTaraL').value.trim();
+        const W = document.getElementById('boxTaraW').value.trim();
+        const H = document.getElementById('boxTaraH').value.trim();
+        if (!L || !W || !H) return null;
+        return { L, W, H };
+      }
+
+      function onBoxNumberModeChange(mode) {
+        modal.boxNumberMode = (mode === 'manual') ? 'manual' : 'auto';
+        // При смене режима очищаем поле другого режима, чтобы валидация не ругалась на старое.
+        if (modal.boxNumberMode === 'auto') {
+          document.getElementById('boxNumberManual').value = '';
+        } else {
+          document.getElementById('boxNumber').value = '';
+        }
+        modal.boxNumberExists = false;
+        applyBoxNumberModeUi();
+        checkModalBoxNumber();
+        updateBoxNumberPreview();
+        renderModalItems();
+      }
+
+      function applyBoxNumberModeUi() {
+        const auto = modal.boxNumberMode !== 'manual';
+        document.getElementById('boxNumberAutoWrap').style.display = auto ? '' : 'none';
+        document.getElementById('boxNumberManualWrap').style.display = auto ? 'none' : '';
+      }
+
+      function getEnteredBoxNumber() {
+        if (modal.boxNumberMode === 'manual') {
+          return document.getElementById('boxNumberManual').value.trim();
+        }
+        return document.getElementById('boxNumber').value.trim();
+      }
+
+      function updateBoxNumberPreview() {
+        const preview = document.getElementById('boxNumberPreview');
+        if (!preview) return;
+        if (!modal.isNew) {
+          preview.textContent = '';
+          return;
+        }
+        const value = getEnteredBoxNumber();
+        if (modal.boxNumberMode === 'manual') {
+          if (!value) {
+            preview.textContent = 'Введи полный номер с этикетки (например, P4715-03).';
+            return;
+          }
+          if (!MANUAL_BOX_NUMBER_RE.test(value)) {
+            preview.textContent = 'Формат: префикс (буквы/цифры до 8 символов) + дефис + номер. Пример: P4715-03.';
+            return;
+          }
+          if (modal.boxNumberExists) {
+            preview.textContent = 'Короб ' + value + ' уже есть в системе.';
+            return;
+          }
+          preview.textContent = 'Будет создан короб: ' + value;
+          return;
+        }
+        // auto-режим
+        if (!/^\d{1,3}$/.test(value)) {
+          preview.textContent = 'Будет создан короб: ' + getBoxPrefix() + '-XXX';
+          return;
+        }
+        preview.textContent = 'Будет создан короб: ' + formatBoxNumber(value);
+      }
+
+      function getModalValidationState() {
+        const errors = [];
+        const itemStates = {};
+
+        const boxType = document.getElementById('boxType').value.trim();
+        const boxStatus = document.getElementById('boxStatus').value.trim();
+        const boxTara = document.getElementById('boxTara').value.trim();
+        const boxAddress = document.getElementById('boxAddress').value.trim();
+        const boxNote = document.getElementById('boxNote').value.trim();
+        const boxNumber = modal.isNew ? getEnteredBoxNumber() : '';
+
+        if (modal.isNew) {
+          if (modal.boxNumberMode === 'manual') {
+            if (!MANUAL_BOX_NUMBER_RE.test(boxNumber)) {
+              errors.push('Введи полный номер короба с этикетки (например, P4715-03).');
+            } else if (modal.boxNumberExists) {
+              errors.push('Короб с таким номером уже существует.');
+            }
+          } else {
+            if (!/^\d{1,3}$/.test(boxNumber)) {
+              errors.push('Для нового короба укажи номер от 1 до 999.');
+            } else if (modal.boxNumberExists) {
+              errors.push('Короб с таким номером уже существует.');
+            }
+          }
+        }
+
+        if (!boxType) errors.push('Укажи тип товара.');
+        if (!boxStatus) errors.push('Укажи статус короба.');
+        if (!boxTara) errors.push('Укажи тару.');
+
+        const hasItemChanges = modal.items.some(item => item.isNew || (item.rowNumber && item.qtyChanged));
+        const hasBoxChanges =
+          modal.isNew ||
+          hasItemChanges ||
+          boxType !== (modal.currentBox.type || '') ||
+          boxStatus !== (modal.currentBox.status || '') ||
+          boxTara !== (modal.currentBox.tara || '') ||
+          boxAddress !== (modal.currentBox.address || '');
+
+        if (hasBoxChanges && !boxNote) {
+          errors.push('Укажи примечание для изменений.');
+        }
+
+        // Group barcodes for dupe detection. Existing rows from the sheet (item.isNew=false)
+        // can have legacy duplicates inside one box (defect-box append-bug). We surface them
+        // as warnings (yellow) and require an explicit "Слить дубли" merge before save.
+        const barcodeGroups = new Map();
+        modal.items.forEach(item => {
+          if (!item.barcode) return;
+          if (!barcodeGroups.has(item.barcode)) barcodeGroups.set(item.barcode, []);
+          barcodeGroups.get(item.barcode).push(item);
+        });
+
+        let unmergedDupeGroups = 0;
+        let activeItems = 0;
+
+        for (const item of modal.items) {
+          const state = { state: 'neutral', barcodeInvalid: false, qtyInvalid: false, message: '' };
+          const isBlankNew = item.isNew && !item.barcode;
+
+          if (isBlankNew) {
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (!item.barcode) {
+            state.state = 'invalid';
+            state.barcodeInvalid = true;
+            errors.push('Для нового блока нужно выбрать баркод.');
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          const group = barcodeGroups.get(item.barcode) || [];
+          const isDupGroup = group.length > 1;
+          const groupHasUnmerged = isDupGroup && group.some(g => !g.mergedDuplicate);
+          const allMergedExceptOne = isDupGroup
+            && group.filter(g => !g.mergedDuplicate).length === 1;
+
+          if (item.qty === '' || item.qty === null || Number.isNaN(Number(item.qty)) || Number(item.qty) < 0) {
+            state.state = 'invalid';
+            state.qtyInvalid = true;
+            errors.push('Укажи корректное количество (≥ 0).');
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (item.isNew && item.barcode && Number(item.qty) <= 0) {
+            state.state = 'invalid';
+            state.qtyInvalid = true;
+            errors.push(`Для нового баркода ${item.barcode} укажи количество больше 0.`);
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (item.mergedDuplicate) {
+            state.state = 'duplicate-merged';
+            state.message = 'Дубликат, объединён в верхнюю строку.';
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          if (isDupGroup && !allMergedExceptOne) {
+            // unmerged dupe — yellow, but not blocking validation; merge is required separately
+            state.state = 'duplicate';
+            const groupSum = group.reduce((s, g) => s + (Number(g.qty) || 0), 0);
+            state.message = `Дубликат: ещё ${group.length - 1} в коробе. Сумма по группе: ${groupSum}.`;
+            itemStates[item.key] = state;
+            continue;
+          }
+
+          state.state = 'valid';
+          if (Number(item.qty) > 0) {
+            activeItems++;
+          }
+
+          itemStates[item.key] = state;
+        }
+
+        // Count unmerged dupe groups (groups where >1 item is not yet merged)
+        for (const [, group] of barcodeGroups) {
+          if (group.length > 1 && group.filter(g => !g.mergedDuplicate).length > 1) {
+            unmergedDupeGroups++;
+          }
+        }
+        if (unmergedDupeGroups > 0) {
+          errors.push(`В коробе ${unmergedDupeGroups} групп дублей баркодов. Нажми «Слить дубли» перед сохранением.`);
+        }
+
+        if (modal.isNew && activeItems === 0) {
+          errors.push('Для нового короба добавь хотя бы один баркод с количеством больше 0.');
+        }
+
+        return {
+          ok: errors.length === 0,
+          errors,
+          itemStates,
+          noteInvalid: hasBoxChanges && !boxNote,
+          unmergedDupeGroups
+        };
+      }
+
+      function renderModalItems() {
+        const container = document.getElementById('modalItems');
+        container.innerHTML = '';
+        const validation = getModalValidationState();
+
+        if (validation.unmergedDupeGroups > 0) {
+          const mergeBtn = document.createElement('button');
+          mergeBtn.type = 'button';
+          mergeBtn.className = 'button merge-dupes-btn';
+          mergeBtn.textContent = `Слить дубли (${validation.unmergedDupeGroups})`;
+          mergeBtn.onclick = mergeModalDuplicates;
+          container.appendChild(mergeBtn);
+        }
+
+        modal.items.forEach(item => {
+          const row = document.createElement('div');
+          const itemState = validation.itemStates[item.key] || { state: 'neutral' };
+          let stateClass = '';
+          if (itemState.state === 'valid') stateClass = 'valid';
+          else if (itemState.state === 'invalid') stateClass = 'invalid';
+          else if (itemState.state === 'duplicate') stateClass = 'duplicate';
+          else if (itemState.state === 'duplicate-merged') stateClass = 'duplicate-merged';
+          row.className = `item-row ${stateClass}`.trim();
+
+          const title = item.sku || (item.isNew ? 'Новый SKU' : 'Без SKU');
+          const boxType = document.getElementById('boxType').value;
+          const barcodeReadonlyHtml = item.barcode
+            ? `<label>Баркод | SKU</label><div class="barcode-readonly-display-wrap">${formatBarcodeDisplayHtml(item.barcode, item.sku)}</div>`
+            : `<label>Баркод | SKU</label><div class="barcode-readonly-display-wrap"><span class="muted">—</span></div>`;
+          const dupMsg = itemState.message
+            ? `<div class="dup-msg">${escapeHtml(itemState.message)}</div>`
+            : '';
+
+          row.innerHTML = `
+            <div class="item-head">
+              <div>
+                <div class="sku-title">${escapeHtml(title)}</div>
+                ${dupMsg}
+              </div>
+              <div class="sub">${item.isNew ? 'новый баркод' : ''}</div>
+            </div>
+            <div class="item-grid">
+              <div class="field ${itemState.barcodeInvalid ? 'invalid' : ''}">
+                ${item.isNew ? renderModalBarcodeSelect(item, boxType) : barcodeReadonlyHtml}
+              </div>
+              <div class="field ${itemState.qtyInvalid ? 'invalid' : ''}">
+                <label>Кол-во *</label>
+                <input type="number" min="0" step="1" value="${item.qty}" onchange="updateModalItemQty('${item.key}', this.value)">
+              </div>
+            </div>
+          `;
+
+          container.appendChild(row);
+        });
+
+        updateModalSaveButton(validation);
+      }
+
+      // Merge duplicate barcode groups inside the box: top item gets the sum,
+      // the rest are marked as mergedDuplicate (qty=0). Required before saving
+      // so syncToKoroby pairs draft-to-koroby rows correctly.
+      function mergeModalDuplicates() {
+        const groups = new Map();
+        modal.items.forEach((item, idx) => {
+          if (!item.barcode) return;
+          if (!groups.has(item.barcode)) groups.set(item.barcode, []);
+          groups.get(item.barcode).push({ item, idx });
+        });
+
+        let merged = 0;
+        for (const [, entries] of groups) {
+          if (entries.length < 2) continue;
+          const active = entries.filter(e => !e.item.mergedDuplicate);
+          if (active.length < 2) continue;
+          // Order by original index — first occurrence is the merge target
+          active.sort((a, b) => a.idx - b.idx);
+          const target = active[0].item;
+          const sum = active.reduce((s, e) => s + (Number(e.item.qty) || 0), 0);
+          target.qty = sum;
+          target.qtyChanged = true;
+          for (let i = 1; i < active.length; i++) {
+            const it = active[i].item;
+            it.qty = 0;
+            it.qtyChanged = true;
+            it.mergedDuplicate = true;
+          }
+          merged++;
+        }
+        renderModalItems();
+      }
+
+      function updateModalSaveButton(validation) {
+        const saveBtn = document.getElementById('modalSaveBtn');
+        saveBtn.disabled = !validation.ok;
+        saveBtn.style.opacity = validation.ok ? '1' : '0.55';
+        saveBtn.style.cursor = validation.ok ? 'pointer' : 'not-allowed';
+
+        const noteField = document.getElementById('boxNote').parentElement;
+        noteField.classList.toggle('invalid', validation.noteInvalid);
+      }
+
+      // Compute the filtered, type-matched, non-busy barcode list for a given item.
+      function getAvailableBarcodesForItem(item, boxType) {
+        const busy = new Set(modal.items.filter(entry => entry.key !== item.key).map(entry => entry.barcode).filter(Boolean));
+        const allAvailable = modal.barcodeOptions
+          .filter(opt => opt.source === 'catalog' || opt.type === boxType)
+          .filter(opt => !busy.has(opt.barcode));
+        const filter = String(item.barcodeFilter || '').trim().toLowerCase();
+        if (!filter) return { allAvailable, filtered: allAvailable };
+        const filtered = allAvailable.filter(opt => {
+          const haystack = (String(opt.barcode || '') + ' ' + String(opt.sku || '')).toLowerCase();
+          return haystack.includes(filter);
+        });
+        return { allAvailable, filtered };
+      }
+
+      // Combobox: один input для поиска и для отображения выбранного. Dropdown — кастомный,
+      // чтобы стилизуемо и одинаково работало на десктопе и планшете. См. ниже:
+      // onComboboxFocus / onComboboxInput / onComboboxPick / onComboboxBlur.
+      function renderModalBarcodeSelect(item, boxType) {
+        const filterValue = item.barcodeFilter || '';
+        const inputId = 'barcode-input-' + item.key;
+        const dropdownId = 'barcode-dropdown-' + item.key;
+        const hintId = 'barcode-hint-' + item.key;
+        return `
+          <label for="${inputId}">Баркод | SKU</label>
+          <div class="combobox-wrap" data-item-key="${escapeHtml(item.key)}">
+            <input id="${inputId}"
+                   type="text"
+                   autocomplete="off"
+                   class="combobox-input"
+                   value="${escapeHtml(filterValue)}"
+                   placeholder="Тапни и выбери, или введи SKU/баркод"
+                   onfocus="onComboboxFocus('${item.key}')"
+                   oninput="onComboboxInput('${item.key}', this.value)"
+                   onkeydown="onComboboxKey('${item.key}', event)"
+                   onblur="onComboboxBlur('${item.key}')">
+            ${filterValue ? `<button type="button" class="combobox-clear" tabindex="-1"
+                onmousedown="event.preventDefault()"
+                onclick="onComboboxClear('${item.key}')" title="Очистить">×</button>` : ''}
+            <span class="combobox-caret">▾</span>
+            <div id="${dropdownId}" class="combobox-dropdown" hidden></div>
+            <div id="${hintId}" class="combobox-hint"></div>
+          </div>
+        `;
+      }
+
+      // ===== Combobox handlers =====
+      // Используем onmousedown на options, чтобы клик сработал ДО onblur input'а
+      // (mousedown срабатывает раньше blur; на touch — pointer events идут в том же порядке).
+      function onComboboxFocus(key) {
+        const wrap = document.querySelector(`.combobox-wrap[data-item-key="${cssEscape(key)}"]`);
+        if (wrap) wrap.classList.add('is-open');
+        const dropdown = document.getElementById('barcode-dropdown-' + key);
+        if (dropdown) dropdown.hidden = false;
+        refreshComboboxDropdown(key);
+        refreshComboboxHint(key);
+      }
+
+      function onComboboxBlur(key) {
+        // Закрываем с задержкой, чтобы успел отработать клик по option (mousedown → click).
+        setTimeout(() => {
+          const dropdown = document.getElementById('barcode-dropdown-' + key);
+          if (dropdown) dropdown.hidden = true;
+          const wrap = document.querySelector(`.combobox-wrap[data-item-key="${cssEscape(key)}"]`);
+          if (wrap) wrap.classList.remove('is-open');
+        }, 180);
+      }
+
+      function onComboboxInput(key, value) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        item.barcodeFilter = value;
+        // Если стерли всё — сбрасываем выбор баркода (полностью пустое поле = нет выбора).
+        if (!String(value).trim()) {
+          if (item.barcode) {
+            item.barcode = '';
+            item.sku = '';
+          }
+        } else {
+          // Авто-выбор если фильтр сужает список ровно до 1 варианта.
+          const boxType = document.getElementById('boxType').value;
+          const { filtered } = getAvailableBarcodesForItem(item, boxType);
+          if (filtered.length === 1 && item.barcode !== filtered[0].barcode) {
+            item.barcode = filtered[0].barcode;
+            const ref = modal.barcodeOptions.find(opt => opt.barcode === filtered[0].barcode);
+            item.sku = ref ? ref.sku : '';
+          }
+        }
+        // Обновляем только dropdown и hint — без полного re-render, чтобы не потерять фокус.
+        refreshComboboxDropdown(key);
+        refreshComboboxHint(key);
+      }
+
+      function onComboboxKey(key, event) {
+        if (event.key === 'Escape') {
+          event.target.blur();
+        } else if (event.key === 'Enter') {
+          // Если фильтр сузил до 1 варианта — выбираем его и закрываем.
+          const item = modal.items.find(i => i.key === key);
+          if (!item) return;
+          const boxType = document.getElementById('boxType').value;
+          const { filtered } = getAvailableBarcodesForItem(item, boxType);
+          if (filtered.length === 1) {
+            event.preventDefault();
+            onComboboxPick(key, filtered[0].barcode);
+          }
+        }
+      }
+
+      function onComboboxClear(key) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        item.barcode = '';
+        item.sku = '';
+        item.barcodeFilter = '';
+        renderModalItems();
+        // Возвращаем фокус на input после re-render
+        const input = document.getElementById('barcode-input-' + key);
+        if (input) input.focus();
+      }
+
+      function onComboboxPick(key, barcode) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        item.barcode = barcode;
+        const ref = modal.barcodeOptions.find(opt => opt.barcode === barcode);
+        item.sku = ref ? ref.sku : '';
+        // В input ставим краткий формат — последние 5 цифр + SKU (визуальная сверка с этикеткой).
+        item.barcodeFilter = formatBarcodeOptionText(ref || { barcode, sku: '' });
+        renderModalItems();
+      }
+
+      function refreshComboboxDropdown(key) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        const dropdown = document.getElementById('barcode-dropdown-' + key);
+        if (!dropdown) return;
+        const boxType = document.getElementById('boxType').value;
+        const { filtered } = getAvailableBarcodesForItem(item, boxType);
+        const inventoryOpts = filtered.filter(o => o.source === 'inventory');
+        const catalogOpts = filtered.filter(o => o.source === 'catalog');
+
+        if (!filtered.length) {
+          dropdown.innerHTML = '<div class="combobox-empty">Ничего не найдено</div>';
+          return;
+        }
+
+        const renderOption = (opt) => {
+          const sel = opt.barcode === item.barcode ? ' is-selected' : '';
+          // onmousedown с preventDefault предотвращает потерю фокуса до клика;
+          // сам выбор делаем в onclick (стабильнее на разных платформах).
+          return `<div class="combobox-option${sel}"
+            data-barcode="${escapeHtml(opt.barcode)}"
+            onmousedown="event.preventDefault()"
+            onclick="onComboboxPick('${item.key}', '${escapeHtml(opt.barcode)}')">
+            ${escapeHtml(formatBarcodeOptionText(opt))}
+          </div>`;
+        };
+
+        let html = '';
+        if (inventoryOpts.length) {
+          html += '<div class="combobox-group">На складе</div>';
+          html += inventoryOpts.map(renderOption).join('');
+        }
+        if (catalogOpts.length) {
+          html += `<div class="combobox-group">Каталог клиента (${catalogOpts.length})</div>`;
+          html += catalogOpts.map(renderOption).join('');
+        }
+        dropdown.innerHTML = html;
+      }
+
+      function refreshComboboxHint(key) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        const hintEl = document.getElementById('barcode-hint-' + key);
+        if (!hintEl) return;
+        const boxType = document.getElementById('boxType').value;
+        const { allAvailable, filtered } = getAvailableBarcodesForItem(item, boxType);
+        const filter = String(item.barcodeFilter || '').trim();
+        hintEl.textContent = filter
+          ? (filtered.length === 0 ? 'Ничего не найдено' : `Подходит ${filtered.length} из ${allAvailable.length}`)
+          : `Всего: ${allAvailable.length}`;
+      }
+
+      // CSS.escape polyfill для безопасных селекторов по data-item-key.
+      function cssEscape(s) {
+        return String(s).replace(/[^a-zA-Z0-9_-]/g, ch => '\\' + ch);
+      }
+
+      function updateModalItemQty(key, value) {
+        const item = modal.items.find(entry => entry.key === key);
+        if (!item) return;
+        item.qty = value === '' ? '' : Number(value);
+        item.qtyChanged = item.isNew ? true : Number(item.originalQty) !== Number(item.qty);
+        renderModalItems();
+      }
+
+      // Старые updateModalItemBarcode / updateModalItemBarcodeFilter удалены —
+      // их заменил combobox (см. onComboboxFocus / onComboboxInput / onComboboxPick).
+
+      function checkModalBoxNumber() {
+        if (modal.boxNumberCheckTimer) {
+          clearTimeout(modal.boxNumberCheckTimer);
+        }
+
+        const value = getEnteredBoxNumber();
+
+        if (modal.boxNumberMode === 'manual') {
+          if (!MANUAL_BOX_NUMBER_RE.test(value)) {
+            modal.boxNumberExists = false;
+            renderModalItems();
+            return;
+          }
+          modal.boxNumberCheckTimer = setTimeout(() => {
+            modal.boxNumberExists = rows.some(row => String(row.box || '').trim() === value);
+            renderModalItems();
+          }, 400);
+          return;
+        }
+
+        // auto-режим
+        if (!/^\d{1,3}$/.test(value)) {
+          modal.boxNumberExists = false;
+          renderModalItems();
+          return;
+        }
+        modal.boxNumberCheckTimer = setTimeout(() => {
+          const formatted = formatBoxNumber(value);
+          modal.boxNumberExists = rows.some(row => String(row.box || '').trim() === formatted);
+          renderModalItems();
+        }, 500);
+      }
+
+      function addModalItem() {
+        modal.newItemCounter += 1;
+        modal.items.push({
+          key: `new-${modal.newItemCounter}`,
+          rowNumber: null,
+          barcode: '',
+          qty: 0,
+          sku: '',
+          isNew: true
+        });
+        renderModalItems();
+      }
+
+      function nextDraftRowNumber() {
+        draftRowCounter -= 1;
+        return draftRowCounter;
+      }
+
+      function buildBoxChangeSummary(finalBoxNumber, oldBox, items, formValues, userNote) {
+        const lines = [];
+        if (modal.isNew) {
+          lines.push(`Создан новый короб ${finalBoxNumber}.`);
+        }
+
+        if (!modal.isNew) {
+          if ((oldBox.type || '') !== formValues.type) lines.push(`Тип товара: ${oldBox.type || '—'} -> ${formValues.type}.`);
+          if ((oldBox.status || '') !== formValues.status) lines.push(`Статус: ${oldBox.status || '—'} -> ${formValues.status}.`);
+          if ((oldBox.tara || '') !== formValues.tara) lines.push(`Тара: ${oldBox.tara || '—'} -> ${formValues.tara}.`);
+          if ((oldBox.address || '') !== formValues.address) lines.push(`Адрес: ${oldBox.address || '—'} -> ${formValues.address || '—'}.`);
+        }
+
+        items.forEach(item => {
+          const qtyNum = Number(item.qty || 0);
+          if (item.rowNumber == null) {
+            lines.push(`Добавлен баркод ${item.barcode}: ${qtyNum}.`);
+            return;
+          }
+          const existing = rows.find(row => row.rowNumber === item.rowNumber);
+          const oldQty = existing ? Number(existing.baseQty ?? existing.qty ?? 0) : 0;
+          if (oldQty !== qtyNum) {
+            lines.push(`Баркод ${item.barcode}: количество ${oldQty} -> ${qtyNum}.`);
+          }
+        });
+
+        const note = (userNote || '').trim();
+        if (note) {
+          lines.push(note);
+        }
+
+        return lines.join('\n').trim();
+      }
+
+      function applyModalChangesLocally(payload) {
+        // Для нового короба: manual-режим = берём boxNumber как есть; auto-режим = клеим префикс к shortNumber.
+        const finalBoxNumber = payload.isNewBox
+          ? (payload.box.numberMode === 'manual'
+              ? String(payload.box.boxNumber || '').trim()
+              : formatBoxNumber(payload.box.shortNumber))
+          : modal.currentBox.boxNumber;
+
+        const existingBoxRows = payload.isNewBox ? [] : rows.filter(row => row.box === modal.currentBox.boxNumber);
+        const insertAt = payload.isNewBox
+          ? rows.length
+          : rows.findIndex(row => row.box === modal.currentBox.boxNumber);
+
+        const changeSummary = buildBoxChangeSummary(finalBoxNumber, modal.currentBox || {}, payload.items, payload.box, payload.boxNote);
+
+        const rebuiltRows = payload.items.map((item, index) => {
+          const sourceRow = item.rowNumber != null
+            ? existingBoxRows.find(row => row.rowNumber === item.rowNumber)
+            : null;
+          const barcodeRef = modal.barcodeOptions.find(opt => opt.barcode === item.barcode) || {};
+          const qtyNum = Number(item.qty || 0);
+          const baseQty = sourceRow ? Number(sourceRow.baseQty ?? sourceRow.qty ?? 0) : 0;
+
+          const row = sourceRow ? { ...sourceRow } : {
+            rowNumber: nextDraftRowNumber(),
+            err: '',
+            address: payload.box.address || '',
+            type: payload.box.type || '',
+            sku: barcodeRef.sku || '',
+            tara: payload.box.tara || '',
+            status: payload.box.status || '',
+            box: finalBoxNumber,
+            skuCount: 0,
+            totalQty: 0,
+            barcode: item.barcode,
+            qty: qtyNum,
+            verified: true,
+            note: '',
+            baseAddress: payload.isNewBox ? 'NEW' : (payload.box.address || ''),
+            newAddress: payload.box.address || '',
+            baseType: payload.isNewBox ? 'NEW' : (payload.box.type || ''),
+            newType: payload.box.type || '',
+            baseTara: payload.isNewBox ? '' : (payload.box.tara || ''),
+            newTara: payload.box.tara || '',
+            baseStatus: payload.isNewBox ? 'NEW' : (payload.box.status || ''),
+            newStatus: payload.box.status || '',
+            baseQty: 0,
+            newQty: qtyNum,
+            isNewDraft: payload.isNewBox,
+            hasChanges: true,
+            changeFlags: {
+              qty: true,
+              address: false,
+              status: false,
+              type: false,
+              tara: false
+            },
+            isNewBoxStart: index === 0
+          };
+
+          row.box = finalBoxNumber;
+          row.address = payload.box.address || '';
+          row.type = payload.box.type || '';
+          row.tara = payload.box.tara || '';
+          row.status = payload.box.status || '';
+          row.barcode = item.barcode;
+          row.sku = sourceRow ? sourceRow.sku : (barcodeRef.sku || '');
+          row.qty = qtyNum;
+          row.verified = true;
+          row.note = changeSummary;
+          row.baseQty = baseQty;
+          row.newQty = qtyNum !== baseQty ? qtyNum : null;
+          row.changeFlags = {
+            qty: row.newQty != null,
+            address: !payload.isNewBox && row.address !== (sourceRow ? sourceRow.baseAddress || sourceRow.address || '' : row.address),
+            status: !payload.isNewBox && row.status !== (sourceRow ? sourceRow.baseStatus || sourceRow.status || '' : row.status),
+            type: !payload.isNewBox && row.type !== (sourceRow ? sourceRow.baseType || sourceRow.type || '' : row.type),
+            tara: !payload.isNewBox && row.tara !== (sourceRow ? sourceRow.baseTara || sourceRow.tara || '' : row.tara)
+          };
+
+          // For merged-duplicate rows: force qty=0 + status=СПИСАНО so syncToKoroby zeroes
+          // these legacy duplicate koroby rows. The merge target keeps the box-level status.
+          if (item.mergedDuplicate === true) {
+            row.qty = 0;
+            row.newQty = 0;
+            row.newStatus = 'СПИСАНО';
+            row.status = 'СПИСАНО';
+            row.changeFlags.qty = true;
+            row.changeFlags.status = true;
+          }
+
+          row.hasChanges = payload.isNewBox || Object.values(row.changeFlags).some(Boolean);
+          row.isNewDraft = payload.isNewBox;
+          row.isNewBoxStart = index === 0;
+          return row;
+        });
+
+        const skuCount = rebuiltRows.filter(row => Number(row.qty || 0) > 0).length;
+        const totalQty = rebuiltRows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+        rebuiltRows.forEach(row => {
+          row.skuCount = skuCount;
+          row.totalQty = totalQty;
+        });
+
+        if (payload.isNewBox) {
+          rows = rows.concat(rebuiltRows);
+        } else {
+          const prefix = rows.slice(0, insertAt);
+          const suffix = rows.slice(insertAt + existingBoxRows.length);
+          rows = prefix.concat(rebuiltRows, suffix);
+        }
+
+        persistDraftState();
+      }
+
+      function saveModal() {
+        const enteredBoxNumber = modal.isNew ? getEnteredBoxNumber() : '';
+        const type = document.getElementById('boxType').value;
+        const status = document.getElementById('boxStatus').value;
+        const tara = document.getElementById('boxTara').value;
+        const address = document.getElementById('boxAddress').value;
+        const note = document.getElementById('boxNote').value;
+        const validation = getModalValidationState();
+        if (!validation.ok) {
+          alert(validation.errors[0] || 'Проверь корректность заполнения формы.');
+          return;
+        }
+
+        // В auto-режиме номер собирается через formatBoxNumber(prefix + short).
+        // В manual-режиме используется введённый полный номер как есть (короб с этикеткой).
+        const isManual = modal.isNew && modal.boxNumberMode === 'manual';
+
+        const payload = {
+          isNewBox: modal.isNew,
+          box: {
+            boxNumber: modal.isNew
+              ? (isManual ? enteredBoxNumber : '')
+              : modal.currentBox.boxNumber,
+            shortNumber: (modal.isNew && !isManual) ? enteredBoxNumber : '',
+            prefix: getBoxPrefix(),
+            // 'manual' = существующая этикетка, не клеим префикс. 'auto' = новый номер с префиксом.
+            numberMode: modal.isNew ? modal.boxNumberMode : 'auto',
+            type,
+            status,
+            tara: tara.trim(),
+            address: address.trim()
+          },
+          boxNote: (() => {
+            // Габариты прячем маркером [ТАРА: LxWxH см] в начало note — для обратной совместимости со Sheets,
+            // где отдельной колонки под габариты нет (см. 1_CONST/02_BUSINESS_PROCESSES.md § Тара и коэффициент).
+            const dims = getTaraDimsForSave();
+            const cleanNote = note.trim();
+            return dims ? injectTaraDimsToNote(cleanNote, dims.L, dims.W, dims.H) : cleanNote;
+          })(),
+          items: modal.items.map(item => ({
+            rowNumber: item.rowNumber,
+            barcode: item.barcode,
+            qty: item.qty === '' ? '' : Number(item.qty),
+            mergedDuplicate: item.mergedDuplicate === true
+          })).filter(item => item.barcode)
+        };
+
+        document.getElementById('modalSaveBtn').disabled = true;
+        document.getElementById('modalSaveBtn').textContent = 'Сохранение...';
+        setModalState('saving', 'Подожди немного, изменения записываются.');
+
+        try {
+          applyModalChangesLocally(payload);
+          renderStats();
+          renderRows();
+
+          // В work-режиме пробрасываем изменения в ЧЕРНОВИК через SyncQueue / append
+          if (context.viewMode === 'work') {
+            syncModalChangesToChern(payload);
+          }
+
+          setModalState('success', 'Данные сохранены в рабочем черновике отчёта.');
+          setTimeout(() => {
+            closeModal();
+          }, 900);
+        } catch (err) {
+          console.error(err);
+          setModalState('error', err && err.message ? err.message : String(err));
+          document.getElementById('modalSaveBtn').disabled = false;
+          document.getElementById('modalSaveBtn').textContent = 'Сохранить';
+        }
+      }
+
+      init();
+    </script>
+
+    <div id="finalizeOverlay" class="modal-overlay">
+      <div class="modal" style="max-width:520px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Провести отчёт</h2>
+          <button class="modal-close" onclick="closeFinalizeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label>Подтверждение</label>
+            <div class="muted" id="finalizeSummary" style="font-size:14px; line-height:1.5;"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="button" onclick="closeFinalizeModal()">Отмена</button>
+          <button class="button primary" onclick="confirmFinalize()">Провести</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="finalizeProgressOverlay" class="modal-overlay" style="background:rgba(255,253,248,0.92); backdrop-filter:blur(4px);">
+      <div style="text-align:center; padding:24px;">
+        <div id="finalizeProgressIcon" style="min-height:50px; margin-bottom:16px;"></div>
+        <div id="finalizeProgressTitle" style="font-size:18px; font-weight:700; margin-bottom:8px;"></div>
+        <div id="finalizeProgressText" style="font-size:14px; color:var(--muted);"></div>
+      </div>
+    </div>
+
+    <div id="modalOverlay" class="modal-overlay">
+      <div class="modal">
+        <div id="modalState" class="modal-state">
+          <div class="modal-state-card">
+            <div id="modalStateIcon" class="modal-state-icon"></div>
+            <div id="modalStateTitle" class="modal-state-title"></div>
+            <div id="modalStateText" class="modal-state-text"></div>
+          </div>
+        </div>
+        <div class="modal-header">
+          <h2 id="modalTitle" class="modal-title">Короб</h2>
+          <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div id="boxNumberField" class="field">
+            <label>Номер короба</label>
+            <div class="box-number-mode" role="tablist">
+              <label class="box-number-mode-pill">
+                <input type="radio" name="boxNumberMode" value="auto" checked
+                       onchange="onBoxNumberModeChange('auto')">
+                <span>Без этикетки — новый номер</span>
+              </label>
+              <label class="box-number-mode-pill">
+                <input type="radio" name="boxNumberMode" value="manual"
+                       onchange="onBoxNumberModeChange('manual')">
+                <span>Уже есть номер на коробе</span>
+              </label>
+            </div>
+            <div id="boxNumberAutoWrap">
+              <input id="boxNumber" type="number" min="1" max="999" placeholder="1-999" inputmode="numeric">
+            </div>
+            <div id="boxNumberManualWrap" style="display:none;">
+              <input id="boxNumberManual" type="text" placeholder="Например: P4715-03" maxlength="30" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="boxNumberPreview" class="muted" style="margin-top:4px;"></div>
+          </div>
+
+          <div class="grid-2">
+            <div class="field">
+              <label>Тип товара *</label>
+              <select id="boxType"><option value="">Выбери</option></select>
+            </div>
+            <div class="field">
+              <label>Статус *</label>
+              <select id="boxStatus"><option value="">Выбери</option></select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Тара *</label>
+            <div class="tara-calc">
+              <div class="tara-type-row">
+                <label class="tara-type-pill">
+                  <input type="radio" name="boxTaraType" value="korob" checked
+                         onchange="onBoxTaraTypeChange('korob')">
+                  <span>Короб</span>
+                </label>
+                <label class="tara-type-pill">
+                  <input type="radio" name="boxTaraType" value="ПАЛ"
+                         onchange="onBoxTaraTypeChange('ПАЛ')">
+                  <span>Палета</span>
+                </label>
+                <label class="tara-type-pill">
+                  <input type="radio" name="boxTaraType" value="ЯЧ"
+                         onchange="onBoxTaraTypeChange('ЯЧ')">
+                  <span>Ячейка</span>
+                </label>
+              </div>
+              <div id="taraDimsWrap" class="tara-dims-row">
+                <input id="boxTaraL" class="tara-dim-input" type="number" min="1" max="999" step="1"
+                       inputmode="numeric" placeholder="Длина" oninput="onBoxTaraDimChange()">
+                <span class="tara-mul">×</span>
+                <input id="boxTaraW" class="tara-dim-input" type="number" min="1" max="999" step="1"
+                       inputmode="numeric" placeholder="Ширина" oninput="onBoxTaraDimChange()">
+                <span class="tara-mul">×</span>
+                <input id="boxTaraH" class="tara-dim-input" type="number" min="1" max="999" step="1"
+                       inputmode="numeric" placeholder="Высота" oninput="onBoxTaraDimChange()">
+                <span class="tara-mul-unit">см</span>
+              </div>
+              <div class="tara-code-row">
+                <span class="tara-code-label">Код тары:</span>
+                <span id="boxTaraCode" class="tara-code-value">—</span>
+                <span id="boxTaraHint" class="muted" style="font-size:12px;"></span>
+              </div>
+            </div>
+            <input type="hidden" id="boxTara" value="">
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label>Адрес</label>
+              <input id="boxAddress">
+            </div>
+            <div></div>
+          </div>
+
+          <div class="field">
+            <label>Примечание</label>
+            <textarea id="boxNote"></textarea>
+          </div>
+        </div>
+
+        <div class="items-section">
+          <div class="items-header">
+            <div>
+              <h3>Содержание короба</h3>
+              <div class="hint">Для отсутствующего товара ставь количество 0. Новый баркод добавляется отдельным блоком.</div>
+            </div>
+            <button class="button secondary" type="button" onclick="addModalItem()">Добавить баркод</button>
+          </div>
+          <div id="modalItems" class="items"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="button" onclick="closeModal()">Отмена</button>
+          <button id="modalSaveBtn" class="button primary" onclick="saveModal()">Сохранить</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

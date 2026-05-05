@@ -158,6 +158,10 @@
       color: #22c55e;
       background: rgba(34, 197, 94, 0.15);
     }
+    .tile-badge.dev {
+      color: #f59e0b;
+      background: rgba(245, 158, 11, 0.15);
+    }
     footer {
       margin-top: 64px;
       text-align: center;
@@ -170,8 +174,9 @@
       .topbar .email { display: none; }
     }
   </style>
+  <link rel="stylesheet" href="/ui/wms.css?v=2026-05-05">
 </head>
-<body class="auth-hidden">
+<body class="auth-hidden hub-page">
   <div class="topbar" id="topbar">
     <span class="email" id="currentUser"></span>
     <a href="/admin/" id="adminLink" style="display:none">Админка</a>
@@ -186,32 +191,32 @@
     </header>
 
     <div class="grid">
-      <a href="/calend-otg/" class="tile active">
-        <span class="tile-badge live">активно</span>
-        <div class="tile-icon">🚚</div>
-        <div class="tile-title">Календарь отгрузок</div>
-        <div class="tile-desc">Отгрузки по датам, статусы, водители, авто, ОТК.</div>
-      </a>
-
       <a href="/invent-tablet/" class="tile active">
         <span class="tile-badge live">активно</span>
         <div class="tile-icon">📋</div>
-        <div class="tile-title">ИНВЕНТ ПЛАНШЕТ</div>
-        <div class="tile-desc">Заявки, короба, проверка, правки и проведение invent внутри Upseller.</div>
+        <div class="tile-title">Инвент</div>
+        <div class="tile-desc">Заявки, короба, проверка, правки и проведение инвентаризации.</div>
       </a>
 
       <a href="/podbor/" class="tile active">
-        <span class="tile-badge live">активно</span>
+        <span class="tile-badge dev">в разработке</span>
         <div class="tile-icon">🍬</div>
-        <div class="tile-title">Подборы</div>
+        <div class="tile-title">Подбор</div>
         <div class="tile-desc">Заявки на подбор и отгрузку: выбор, раскладка коробов по отгрузке и ячейкам.</div>
+      </a>
+
+      <a href="/PRIEMKA/" class="tile active">
+        <span class="tile-badge dev">в разработке</span>
+        <div class="tile-icon">📦</div>
+        <div class="tile-title">Приемка</div>
+        <div class="tile-desc">Приемка поставок: короба, QR-этикетки, сканер, планшет и TSD.</div>
       </a>
 
       <div class="tile disabled">
         <span class="tile-badge soon">скоро</span>
-        <div class="tile-icon">📊</div>
-        <div class="tile-title">Финансы</div>
-        <div class="tile-desc">Расходы, аналитика, отчёты по периодам.</div>
+        <div class="tile-icon">🗒️</div>
+        <div class="tile-title">События</div>
+        <div class="tile-desc">Журнал событий всех модулей: emission-контракт, replay, аналитика.</div>
       </div>
     </div>
 

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Приемка WMS Web</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css?v=0.0.5">
+  <link rel="stylesheet" href="/ui/wms.css?v=2026-05-05">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <a href="/" class="priemka-home-link" title="На главную"
+           onclick="return window.confirm('Вы уверены, что хотите вернуться на главный экран без каких-либо дополнительных проверок?');">←</a>
+        <div class="brand-mark">W</div>
+        <div>
+          <h1>Приемка WMS Web</h1>
+          <p id="subtitle">Миграционный прототип GAS -> Web</p>
+        </div>
+      </div>
+
+      <div class="mode-switch" aria-label="Режим интерфейса">
+        <button data-mode="desktop" class="mode-btn">Десктоп</button>
+        <button data-mode="tablet" class="mode-btn">Планшет</button>
+        <button data-mode="phone" class="mode-btn">Телефон</button>
+        <button data-mode="tsd" class="mode-btn">ТСД</button>
+      </div>
+    </header>
+
+    <main id="root"></main>
+  </div>
+
+  <script src="./app.js?v=0.0.5"></script>
+</body>
+</html>

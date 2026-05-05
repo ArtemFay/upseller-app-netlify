@@ -1,6 +1,15 @@
 # Local dependencies and build output
 node_modules/
-.netlify/
+
+# Local secrets — never commit
+.env
+.env.local
+**/.env
+**/.env.local
+
+# Local server runtime (whitelist users.json — данные, не код).
+# .env уже покрыт паттерном **/.env выше.
+server/data/
 
 # OS/editor noise
 .DS_Store
@@ -9,3 +18,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# MCP browser-tool артефакты (chrome-devtools / playwright snapshots)
+.playwright-mcp/
+
+# PNG в корне репо — не должны коммититься (тестовые скриншоты).
+# Скриншоты для документации — кладите в archive/ или модульный docs/.
+/*.png

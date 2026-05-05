@@ -11,16 +11,15 @@
   <header class="topbar">
     <div class="title">
       <button id="backBtn" class="back-btn hidden" title="К списку заявок">←</button>
-      <a href="/" class="home-link" title="На главную" onclick="return window.confirm('Вы уверены, что хотите вернуться на главный экран без каких-либо дополнительных проверок?');">🏠</a>
+      <a href="/" class="home-link" title="На главную">🏠</a>
       🍬 ПОДБОРЫ
     </div>
     <div class="topbar-spacer"></div>
-    <span id="syncStatus" class="sync-status" data-status="idle" title="Состояние синхронизации"></span>
     <div class="user-chip" id="userChip" title="Пользователь">
       <span class="user-avatar" id="userAvatar">?</span>
       <span class="user-name" id="userName">—</span>
     </div>
-    <button type="button" id="settingsBtn" class="settings-btn" title="Меню">☰</button>
+    <button type="button" id="logoutBtn" class="logout-btn" title="Выйти">⎋</button>
   </header>
 
   <!-- ============= STATES ============= -->
@@ -49,7 +48,7 @@
       <div class="meta-item"><span class="meta-label">SKU в заявке</span><span class="meta-value" id="m-sku">0</span></div>
       <div class="meta-item"><span class="meta-label">Штук всего</span><span class="meta-value" id="m-qty">0</span></div>
       <div class="meta-item"><span class="meta-label">Строк</span><span class="meta-value" id="m-lines">0</span></div>
-      <div class="meta-item"><span class="meta-label">Собрано</span><span class="meta-value" id="m-verified">0</span></div>
+      <div class="meta-item"><span class="meta-label">Проверено</span><span class="meta-value" id="m-verified">0</span></div>
       <div class="meta-item"><span class="meta-label">Загрузка</span><span class="meta-value" id="m-ms">—</span></div>
     </section>
 
@@ -81,7 +80,10 @@
       }
     })();
 
-    // Hover tooltip только; реальный клик обрабатывает app.js (settings menu).
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      location.href = '/login/';
+    });
   </script>
 </body>
 </html>
