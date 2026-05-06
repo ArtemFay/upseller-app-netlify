@@ -1695,9 +1695,12 @@ async function getClientNameByReportId(reportId) {
  * READ-ONLY — never writes to the Upseller table.
  */
 async function getClientBarcodes(clientName) {
+  // Кэш живёт на стороне клиента (clientBarcodeCache в шаблоне) — однократная загрузка
+  // при каждой загрузке сайта. Серверного кэша нет: если пользователь перезагрузил сайт,
+  // он должен получить актуальную номенклатуру из Sheets.
   const wanted = String(clientName || '').trim();
-  console.log('[getClientBarcodes] req client=', JSON.stringify(clientName), 'wanted=', JSON.stringify(wanted), 'codes=', wanted ? [...wanted].map(c => c.charCodeAt(0)).join(',') : '');
   if (!wanted) return [];
+  console.log('[getClientBarcodes] reading Sheets for', wanted);
   const sheets = await getSheets();
 
   const res = await sheets.spreadsheets.values.get({
@@ -1718,8 +1721,9 @@ async function getClientBarcodes(clientName) {
       result.push({ barcode, sku });
     }
   });
-  console.log('[getClientBarcodes] returning', result.length, 'barcodes for', wanted);
-  return result.sort((a, b) => a.barcode.localeCompare(b.barcode));
+  const sorted = result.sort((a, b) => a.barcode.localeCompare(b.barcode));
+  console.log('[getClientBarcodes] returning', sorted.length, 'barcodes for', wanted);
+  return sorted;
 }
 
 export default {

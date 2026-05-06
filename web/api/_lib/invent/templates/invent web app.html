@@ -1275,6 +1275,7 @@
         <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:14px;">
           <span id="clientInfoName" style="font-weight:700; color:var(--primary);"></span>
           <span id="clientInfoReport" class="muted"></span>
+          <span id="clientCatalogStatus" class="muted" style="margin-left:auto; font-size:12px;"></span>
         </div>
       </div>
 
@@ -1718,6 +1719,12 @@
           cip.style.display = '';
           document.getElementById('clientInfoName').textContent = context.clientName || '';
           document.getElementById('clientInfoReport').textContent = context.chernSheetName ? ('Отчёт: ' + context.chernSheetName) : '';
+        }
+
+        // Preload каталога клиента сразу, без ожидания openModal — иначе пользователь
+        // ждёт ~5–10 сек при первом «Создать короб». Здесь грузится в фоне, статус виден в clientInfoPanel.
+        if (context.clientName) {
+          loadClientBarcodes();
         }
 
         if (viewMode === 'legacy') {
@@ -2390,61 +2397,99 @@
         return mergeWithCanonical(dynamic, CANONICAL_STATUSES);
       }
 
-      // Client barcode catalog from ТОВАРЫ — loaded once per session
+      // Client barcode catalog from ТОВАРЫ — loads once при заходе на work-screen.
+      // Каталог НЕ маленький (~440 баркодов у некоторых клиентов), поэтому грузим в фоне.
       let clientBarcodeCache = null;
       let clientBarcodeLoading = false;
+      let clientBarcodePromise = null;
+
+      function setClientCatalogStatus(text, level) {
+        const el = document.getElementById('clientCatalogStatus');
+        if (!el) return;
+        el.textContent = text || '';
+        el.style.color = level === 'error' ? 'var(--err-line)'
+                       : level === 'ok'    ? 'var(--ok-line, #93c47d)'
+                       : 'var(--muted)';
+      }
 
       function loadClientBarcodes() {
-        if (clientBarcodeCache || clientBarcodeLoading || !context.clientName) return Promise.resolve();
+        if (clientBarcodeCache) return Promise.resolve();
+        if (clientBarcodePromise) return clientBarcodePromise;
+        if (!context.clientName) {
+          setClientCatalogStatus('каталог недоступен — клиент не определён', 'error');
+          clientBarcodeCache = [];
+          return Promise.resolve();
+        }
+        setClientCatalogStatus('загрузка каталога клиента…');
         clientBarcodeLoading = true;
-        return new Promise((resolve) => {
+        const t0 = Date.now();
+        clientBarcodePromise = new Promise((resolve) => {
           google.script.run
             .withSuccessHandler(function(data) {
-              clientBarcodeCache = data || [];
+              clientBarcodeCache = Array.isArray(data) ? data : [];
               clientBarcodeLoading = false;
+              const ms = Date.now() - t0;
+              console.log('[loadClientBarcodes] OK:', clientBarcodeCache.length, 'barcodes in', ms, 'ms');
+              setClientCatalogStatus(`каталог: ${clientBarcodeCache.length} баркодов`, clientBarcodeCache.length > 0 ? 'ok' : 'error');
               resolve();
             })
             .withFailureHandler(function(err) {
-              console.error('Failed to load client barcodes:', err);
+              console.error('[loadClientBarcodes] FAIL:', err && err.message || err);
               clientBarcodeCache = [];
               clientBarcodeLoading = false;
+              setClientCatalogStatus('каталог не загрузился: ' + (err && err.message || 'ошибка'), 'error');
               resolve();
             })
             .getClientBarcodesFromWeb(context.clientName);
         });
+        return clientBarcodePromise;
       }
 
       function getBarcodeOptionsFromRows() {
-        const seen = new Set();
-        const options = [];
+        // Каталог клиента — основной источник правды (все баркоды, согласованные клиентом).
+        // Сначала индексируем его, потом обогащаем типом из инвента (не перетирая source).
+        // Это критично для фильтра в combobox `source === 'catalog' || opt.type === boxType`:
+        // если баркод клиента лежит в инвенте с типом, отличным от текущего boxType,
+        // он всё равно должен оставаться доступным для выбора — потому что это баркод клиента.
+        const byBarcode = new Map();
 
-        // 1. Barcodes from current inventory rows
-        rows.forEach(row => {
-          const barcode = String(row.barcode || '').trim();
-          if (!barcode || seen.has(barcode)) return;
-          seen.add(barcode);
-          options.push({
-            barcode,
-            type: String(row.type || '').trim(),
-            sku: String(row.sku || '').trim(),
-            source: 'inventory'
-          });
-        });
-
-        // 2. Merge client catalog barcodes (from ТОВАРЫ)
+        // 1. Сначала вносим всё из каталога клиента — все они должны быть доступны.
         if (clientBarcodeCache) {
           clientBarcodeCache.forEach(item => {
-            if (!item.barcode || seen.has(item.barcode)) return;
-            seen.add(item.barcode);
-            options.push({
+            if (!item.barcode) return;
+            byBarcode.set(item.barcode, {
               barcode: item.barcode,
-              type: '',
+              type: '',                // каталог не знает типа товара — будет обогащён ниже
               sku: item.sku || '',
               source: 'catalog'
             });
           });
         }
 
+        // 2. Inventory — обогащает уже существующую запись (тип/sku, source оставляем catalog),
+        // а если баркода нет в каталоге — добавляет как inventory (новый/неучтённый).
+        rows.forEach(row => {
+          const barcode = String(row.barcode || '').trim();
+          if (!barcode) return;
+          const existing = byBarcode.get(barcode);
+          if (existing) {
+            const t = String(row.type || '').trim();
+            if (t && !existing.type) existing.type = t;
+            if (!existing.sku) existing.sku = String(row.sku || '').trim();
+          } else {
+            byBarcode.set(barcode, {
+              barcode,
+              type: String(row.type || '').trim(),
+              sku: String(row.sku || '').trim(),
+              source: 'inventory'
+            });
+          }
+        });
+
+        const options = Array.from(byBarcode.values());
+        const cat = options.filter(o => o.source === 'catalog').length;
+        const inv = options.length - cat;
+        console.log('[getBarcodeOptionsFromRows] catalog=', cat, 'inventory-only=', inv, 'total=', options.length, 'cacheState=', clientBarcodeCache ? clientBarcodeCache.length : 'null');
         return options.sort((a, b) => `${a.sku} ${a.barcode}`.localeCompare(`${b.sku} ${b.barcode}`, 'ru'));
       }
 
@@ -2515,11 +2560,14 @@
         document.getElementById('modalOverlay').classList.add('show');
         document.getElementById('modalTitle').textContent = rowNumber ? 'Редактирование короба' : 'Создание нового короба';
 
-        // Load client catalog barcodes if not yet loaded
+        // Каталог клиента предзагружается при init (см. setupWorkScreen → loadClientBarcodes).
+        // Здесь — fallback на случай, если не успело: ждём загрузку (она уже идёт).
         if (!clientBarcodeCache && context.clientName) {
-          document.getElementById('modalItems').innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div><div class="muted" style="margin-top:8px;">Загрузка каталога баркодов клиента...</div></div>';
+          if (!clientBarcodePromise) loadClientBarcodes();
+          document.getElementById('modalItems').innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner" style="margin:0 auto;"></div><div class="muted" style="margin-top:8px;">Догружаем каталог клиента…</div></div>';
           await loadClientBarcodes();
         }
+        console.log('[openModal] catalog ready:', clientBarcodeCache ? clientBarcodeCache.length : 'null', 'inventory rows:', rows.length);
 
         try {
           const payload = buildModalPayloadFromRows(rowNumber || null);
