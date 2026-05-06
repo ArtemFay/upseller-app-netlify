@@ -1265,8 +1265,8 @@
           </div>
           <div id="workActions" class="actions" style="display:none;">
             <button class="button primary" onclick="openModal()">Создать короб</button>
+            <button id="syncKorobyBtn" class="button" onclick="openSyncDialog()" title="Сверить черновик с актуальным состоянием 🍬 КОРОБЫ">Синхронизировать</button>
             <button id="finalizeBtn" class="button success" onclick="openFinalizeModal()" disabled>Провести</button>
-            <a class="button" href="<?= context.baseUrl ?>?view=log">LOG</a>
           </div>
         </div>
       </div>
@@ -2696,7 +2696,14 @@
       }
 
       // === Режимы ввода номера короба (auto/manual) — задача «короб с уже существующей этикеткой» ===
+      // Короба клиента: «P4715-03», «B0123-127» — буквы/цифры + дефис + цифры.
       const MANUAL_BOX_NUMBER_RE = /^[A-Za-zА-Яа-я0-9]{1,8}-\d{1,4}$/;
+      // Ячейки хранения: «11_14», «04_07» — две цифры + подчёркивание + две цифры.
+      const CELL_BOX_NUMBER_RE = /^\d{2}_\d{2}$/;
+
+      function getManualBoxNumberRegex() {
+        return getCurrentTaraType() === 'ЯЧ' ? CELL_BOX_NUMBER_RE : MANUAL_BOX_NUMBER_RE;
+      }
 
       // === Калькулятор тары ===
       // Стандарт: К_1,0 = 60×40×40 см = 96000 см³ → coef = (L×W×H) / 96000.
@@ -2794,6 +2801,12 @@
       function onBoxTaraTypeChange(type) {
         applyTaraTypeUi(type);
         recalcTaraCode();
+        // При смене типа тары меняется regex для manual-номера короба (ячейка vs клиентский короб),
+        // поэтому пересчитываем превью и валидацию.
+        if (modal.isNew && modal.boxNumberMode === 'manual') {
+          checkModalBoxNumber();
+          updateBoxNumberPreview();
+        }
         renderModalItems();
       }
 
@@ -2881,12 +2894,15 @@
         }
         const value = getEnteredBoxNumber();
         if (modal.boxNumberMode === 'manual') {
+          const isCell = getCurrentTaraType() === 'ЯЧ';
+          const example = isCell ? '11_14' : 'P4715-03';
+          const format = isCell ? 'Формат для ячейки: 2 цифры + подчёркивание + 2 цифры. Пример: 11_14.' : 'Формат: префикс (буквы/цифры до 8 символов) + дефис + номер. Пример: P4715-03.';
           if (!value) {
-            preview.textContent = 'Введи полный номер с этикетки (например, P4715-03).';
+            preview.textContent = 'Введи полный номер с этикетки (например, ' + example + ').';
             return;
           }
-          if (!MANUAL_BOX_NUMBER_RE.test(value)) {
-            preview.textContent = 'Формат: префикс (буквы/цифры до 8 символов) + дефис + номер. Пример: P4715-03.';
+          if (!getManualBoxNumberRegex().test(value)) {
+            preview.textContent = format;
             return;
           }
           if (modal.boxNumberExists) {
@@ -2917,8 +2933,10 @@
 
         if (modal.isNew) {
           if (modal.boxNumberMode === 'manual') {
-            if (!MANUAL_BOX_NUMBER_RE.test(boxNumber)) {
-              errors.push('Введи полный номер короба с этикетки (например, P4715-03).');
+            if (!getManualBoxNumberRegex().test(boxNumber)) {
+              errors.push(getCurrentTaraType() === 'ЯЧ'
+                ? 'Для ячейки укажи номер в формате XX_XX (например, 11_14).'
+                : 'Введи полный номер короба с этикетки (например, P4715-03).');
             } else if (modal.boxNumberExists) {
               errors.push('Короб с таким номером уже существует.');
             }
@@ -3393,7 +3411,7 @@
         const value = getEnteredBoxNumber();
 
         if (modal.boxNumberMode === 'manual') {
-          if (!MANUAL_BOX_NUMBER_RE.test(value)) {
+          if (!getManualBoxNumberRegex().test(value)) {
             modal.boxNumberExists = false;
             renderModalItems();
             return;
@@ -3662,9 +3680,118 @@
         }
       }
 
+      // ===== Синхронизация черновика с 🍬 КОРОБЫ =====
+      // Подтверждение → запускаем backend → показываем итог. Текущие правки пользователя
+      // (галочки, new*-поля) для коробов с расхождениями будут сброшены — он перепроверит заново.
+
+      function openSyncDialog() {
+        if (!context.reportId || !context.clientName) {
+          alert('Синхронизация доступна только из активного отчёта инвента.');
+          return;
+        }
+        document.getElementById('syncOverlay').classList.add('show');
+        document.getElementById('syncStep').dataset.step = 'confirm';
+        document.getElementById('syncConfirmBlock').style.display = '';
+        document.getElementById('syncProgressBlock').style.display = 'none';
+        document.getElementById('syncResultBlock').style.display = 'none';
+        document.getElementById('syncErrorBlock').style.display = 'none';
+        document.getElementById('syncBtnConfirm').style.display = '';
+      }
+
+      function closeSyncDialog() {
+        document.getElementById('syncOverlay').classList.remove('show');
+      }
+
+      function runSync() {
+        // На время выполнения и после — скрываем кнопку «Запустить» (повторно нажимать незачем).
+        document.getElementById('syncBtnConfirm').style.display = 'none';
+        document.getElementById('syncConfirmBlock').style.display = 'none';
+        document.getElementById('syncProgressBlock').style.display = '';
+        document.getElementById('syncStep').dataset.step = 'running';
+
+        google.script.run
+          .withSuccessHandler(async function(result) {
+            try {
+              // Перезагружаем черновик — все обновлённые/добавленные строки появятся в полотне.
+              const data = await new Promise((resolve, reject) => {
+                google.script.run
+                  .withSuccessHandler(resolve)
+                  .withFailureHandler(reject)
+                  .getChernWebListDataFromWeb(context.reportId, context.chernSheetName || '');
+              });
+              rows = data.rows || [];
+              syncRevision = data.syncRevision || syncRevision;
+              renderStats();
+              fillSelect('statusFilter', uniqueValues(rows.map(row => row.status)));
+              fillSelect('taraFilter', uniqueValues(rows.map(row => row.tara)));
+              fillSelect('addressFilter', uniqueValues(rows.map(row => row.address)));
+              renderRows();
+            } catch (e) {
+              console.error('reload after sync failed:', e);
+            }
+            document.getElementById('syncProgressBlock').style.display = 'none';
+            document.getElementById('syncResultBlock').style.display = '';
+            document.getElementById('syncStep').dataset.step = 'done';
+            document.getElementById('syncResultAdded').textContent   = result.added || 0;
+            document.getElementById('syncResultUpdated').textContent = result.updated || 0;
+            document.getElementById('syncResultKept').textContent    = result.kept || 0;
+          })
+          .withFailureHandler(function(err) {
+            console.error('[sync] FAIL:', err && err.message || err);
+            document.getElementById('syncProgressBlock').style.display = 'none';
+            document.getElementById('syncErrorBlock').style.display = '';
+            document.getElementById('syncErrorText').textContent = (err && err.message) || 'Не удалось выполнить синхронизацию.';
+            document.getElementById('syncStep').dataset.step = 'error';
+          })
+          .syncChernWithKorobyFromWeb(context.reportId, context.chernSheetName || '', context.clientName);
+      }
+
       init();
     </script>
 
+    <div id="syncOverlay" class="modal-overlay">
+      <div class="modal" style="max-width:520px;">
+        <div class="modal-header">
+          <h2 class="modal-title">Синхронизировать с 🍬 КОРОБЫ</h2>
+          <button class="modal-close" onclick="closeSyncDialog()">&times;</button>
+        </div>
+        <div class="modal-body" id="syncStep" data-step="confirm">
+          <div id="syncConfirmBlock">
+            <p style="margin:0 0 10px;">Сверим текущий черновик с актуальным состоянием листа 🍬 КОРОБЫ для клиента.</p>
+            <ul class="muted" style="font-size:13px; line-height:1.5; padding-left:18px; margin:0 0 10px;">
+              <li>Появившиеся в КОРОБЫ короба — добавим в черновик (без галочки).</li>
+              <li>Изменившиеся короба — обновим данные, снимем галочку «проверено», очистим внесённые правки (примечание сохранится).</li>
+              <li>Коробы только в черновике (списанные на складе) — оставим как есть, доверяя ручной проверке.</li>
+            </ul>
+            <p class="muted" style="font-size:12px; margin:0;">Запускать имеет смысл, если параллельно велась приёмка/отгрузка — иначе можно пропустить.</p>
+          </div>
+          <div id="syncProgressBlock" style="display:none; text-align:center; padding:20px;">
+            <div class="spinner"></div>
+            <div class="muted" style="margin-top:10px;">Сверяю с КОРОБЫ…</div>
+          </div>
+          <div id="syncResultBlock" style="display:none;">
+            <div style="background:var(--ok-bg); border:1px solid var(--ok-line); border-radius:8px; padding:12px; margin-bottom:10px;">
+              <strong style="display:block; margin-bottom:6px;">Синхронизация завершена.</strong>
+              <div style="display:grid; grid-template-columns:auto 1fr; column-gap:10px; row-gap:4px; font-size:14px;">
+                <span class="muted">Добавлено:</span><span><strong id="syncResultAdded">0</strong> новых коробов</span>
+                <span class="muted">Обновлено:</span><span><strong id="syncResultUpdated">0</strong> коробов (требуют перепроверки)</span>
+                <span class="muted">Без изменений:</span><span><strong id="syncResultKept">0</strong> коробов</span>
+              </div>
+            </div>
+          </div>
+          <div id="syncErrorBlock" style="display:none;">
+            <div style="background:var(--err-bg); border:1px solid var(--err-line); border-radius:8px; padding:12px; color:var(--err-line);">
+              <strong>Ошибка синхронизации</strong>
+              <div id="syncErrorText" style="margin-top:6px; font-size:13px;"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="button" onclick="closeSyncDialog()">Закрыть</button>
+          <button id="syncBtnConfirm" class="button primary" onclick="runSync()">Запустить</button>
+        </div>
+      </div>
+    </div>
     <div id="finalizeOverlay" class="modal-overlay">
       <div class="modal" style="max-width:520px;">
         <div class="modal-header">

@@ -1084,6 +1084,162 @@ async function appendChernRows(newRows, reportId, chernSheetName) {
 }
 
 /**
+ * Синхронизация ЧЕРНОВИКА с актуальным состоянием листа 🍬 КОРОБЫ.
+ *
+ * Назначение: пока ведётся инвент, на складе могли параллельно прийти/уйти/измениться короба.
+ * Чтобы не упустить эти изменения и не сохранить устаревшую галочку «проверено», пользователь
+ * нажимает «Синхронизировать». Алгоритм diff по ключу `barcode + box_number`:
+ *
+ *   - В ЧЕРНОВИКЕ есть, в КОРОБЫ нет → оставляем как есть (доверяем ручной проверке).
+ *   - В обоих, поля совпадают → не трогаем.
+ *   - В обоих, поля отличаются → переписываем base-поля из КОРОБЫ, снимаем verified=false,
+ *     обнуляем new*-поля. Note (примечание) не трогаем — это история правок.
+ *   - Только в КОРОБЫ → append в ЧЕРНОВИК с verified=false.
+ *
+ * Сравниваемые поля: address, type, tara, status, qty.
+ *
+ * @param {string} reportId
+ * @param {string} chernSheetName
+ * @param {string} clientName
+ * @returns {{ok: true, added: number, updated: number, kept: number, total: number, sample: object[]}}
+ */
+async function syncChernWithKoroby(reportId, chernSheetName, clientName) {
+  if (!reportId) throw new Error('reportId не передан');
+  if (!clientName) throw new Error('clientName не передан');
+  const targetSheet = chernSheetName || CHERN.sheetName;
+  const sheets = await getSheets();
+
+  // 1. Read CHERN
+  const chernRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `'${targetSheet}'!A${CHERN.startRow}:T`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  const chernRaw = chernRes.data.values || [];
+
+  // 2. Read KOROBY (filtered by client)
+  const korobyRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${KOROBY.sheetName}!A${KOROBY.startRow}:U`,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  });
+  const korobyRaw = (korobyRes.data.values || []).filter(raw => {
+    const row = Array.from({ length: KOROBY.rowWidth }, (_, i) => raw[i] !== undefined ? raw[i] : '');
+    return norm(row[KOROBY.clientCol - 1]) === clientName;
+  });
+
+  // 3. Index KOROBY by `box|barcode`. Если в КОРОБЫ дубликат — берём первую.
+  const korobyByKey = new Map();
+  korobyRaw.forEach(raw => {
+    const row = Array.from({ length: KOROBY.rowWidth }, (_, i) => raw[i] !== undefined ? raw[i] : '');
+    const box = norm(row[KOROBY.boxCol - 1]);
+    const barcode = norm(row[KOROBY.barcodeCol - 1]);
+    if (!box || !barcode) return;
+    const key = box + '|' + barcode;
+    if (korobyByKey.has(key)) return; // первая запись
+    korobyByKey.set(key, {
+      address: norm(row[KOROBY.addressCol - 1]),
+      type:    norm(row[KOROBY.typeCol - 1]),
+      tara:    norm(row[KOROBY.taraCol - 1]),
+      status:  norm(row[KOROBY.statusCol - 1]),
+      qty:     toNum(row[KOROBY.qtyCol - 1]),
+      sku:     norm(row[KOROBY.skuNameCol - 1]),
+      box, barcode
+    });
+  });
+
+  // 4. Index CHERN by `box|barcode` (только для нашего reportId)
+  const chernByKey = new Map();
+  chernRaw.forEach((raw, idx) => {
+    const row = Array.from({ length: CHERN.rowWidth }, (_, i) => raw[i] !== undefined ? raw[i] : '');
+    if (norm(row[CHERN.reportIdCol - 1]) !== reportId) return;
+    const box = norm(row[CHERN.boxCol - 1]);
+    const barcode = norm(row[CHERN.barcodeCol - 1]);
+    if (!box || !barcode) return;
+    const key = box + '|' + barcode;
+    chernByKey.set(key, {
+      chernRow: CHERN.startRow + idx,
+      address: norm(row[CHERN.addressCol - 1]),
+      type:    norm(row[CHERN.typeCol - 1]),
+      tara:    norm(row[CHERN.taraCol - 1]),
+      status:  norm(row[CHERN.statusCol - 1]),
+      qty:     toNum(row[CHERN.qtyCol - 1]),
+      box, barcode
+    });
+  });
+
+  // 5. Diff
+  const updates = [];   // existing CHERN rows that need overwrite (base fields + reset verified + clear new*)
+  const newRows = [];   // KOROBY rows that aren't in CHERN — to append
+  let kept = 0;
+
+  for (const [key, c] of chernByKey) {
+    const k = korobyByKey.get(key);
+    if (!k) { kept++; continue; }
+    const same = c.address === k.address
+              && c.type    === k.type
+              && c.tara    === k.tara
+              && c.status  === k.status
+              && c.qty     === k.qty;
+    if (same) { kept++; continue; }
+    updates.push({ chernRow: c.chernRow, koroby: k });
+  }
+
+  for (const [key, k] of korobyByKey) {
+    if (!chernByKey.has(key)) {
+      newRows.push(k);
+    }
+  }
+
+  // 6. Apply updates (base fields + verified=false + clear new*)
+  if (updates.length > 0) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const dt = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const data = [];
+    updates.forEach(u => {
+      const row = u.chernRow;
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.addressCol)}${row}`,    values: [[u.koroby.address]] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.typeCol)}${row}`,       values: [[u.koroby.type]] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.taraCol)}${row}`,       values: [[u.koroby.tara]] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.statusCol)}${row}`,     values: [[u.koroby.status]] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.qtyCol)}${row}`,        values: [[u.koroby.qty]] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.verifiedCol)}${row}`,   values: [[false]] });
+      // Чистим new*-поля (пользователь должен заново принять решение об изменениях)
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.newQtyCol)}${row}`,     values: [['']] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.newAddressCol)}${row}`, values: [['']] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.newStatusCol)}${row}`,  values: [['']] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.newTypeCol)}${row}`,    values: [['']] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.newTaraCol)}${row}`,    values: [['']] });
+      data.push({ range: `'${targetSheet}'!${colLetter(CHERN.dateTimeCol)}${row}`,   values: [[dt]] });
+    });
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SPREADSHEET_ID,
+      requestBody: { valueInputOption: 'USER_ENTERED', data }
+    });
+  }
+
+  // 7. Append new rows
+  if (newRows.length > 0) {
+    await appendChernRows(newRows.map(k => ({
+      address: k.address, type: k.type, sku: k.sku,
+      tara: k.tara, status: k.status, box: k.box,
+      skuCount: 0, totalQty: 0,
+      barcode: k.barcode, qty: k.qty,
+      verified: false, note: ''
+    })), reportId, chernSheetName);
+  }
+
+  return {
+    ok: true,
+    added:   newRows.length,
+    updated: updates.length,
+    kept,
+    total:   chernByKey.size + newRows.length
+  };
+}
+
+/**
  * Finalize report: formulas → static values, set status ЗАВЕРШЁН, hide sheet.
  */
 async function finalizeReport(reportId) {
@@ -1740,6 +1896,7 @@ export default {
   getPreviewBoxes,
   finalizeReport,
   syncToKoroby,
+  syncChernWithKoroby,
   resetInvent,
   getClientNameByReportId,
   getClientBarcodes,

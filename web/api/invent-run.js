@@ -56,6 +56,9 @@ const API_HANDLERS = {
   async getClientBarcodesFromWeb(args) {
     return await sheetsClient.getClientBarcodes(args[0]);
   },
+  async syncChernWithKorobyFromWeb(args) {
+    return await sheetsClient.syncChernWithKoroby(args[0], args[1], args[2]);
+  },
 };
 
 export default async function handler(request) {
