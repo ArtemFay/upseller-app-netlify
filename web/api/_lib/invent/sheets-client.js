@@ -215,7 +215,8 @@ async function getBoxEditorPayload(rowNumber) {
         barcode: bc,
         qty: toNum(padded[CFG.qtyCol - 1]),
         sku: String(padded[4] || ''),
-        newQty: cellStr(padded[CFG.newQtyCol - 1]) === '' ? null : toNum(padded[CFG.newQtyCol - 1])
+        newQty: cellStr(padded[CFG.newQtyCol - 1]) === '' ? null : toNum(padded[CFG.newQtyCol - 1]),
+        verified: !!norm(padded[CFG.verifiedCol - 1])
       });
     }
   });
@@ -1695,6 +1696,7 @@ async function getClientNameByReportId(reportId) {
  */
 async function getClientBarcodes(clientName) {
   const wanted = String(clientName || '').trim();
+  console.log('[getClientBarcodes] req client=', JSON.stringify(clientName), 'wanted=', JSON.stringify(wanted), 'codes=', wanted ? [...wanted].map(c => c.charCodeAt(0)).join(',') : '');
   if (!wanted) return [];
   const sheets = await getSheets();
 
@@ -1716,7 +1718,7 @@ async function getClientBarcodes(clientName) {
       result.push({ barcode, sku });
     }
   });
-
+  console.log('[getClientBarcodes] returning', result.length, 'barcodes for', wanted);
   return result.sort((a, b) => a.barcode.localeCompare(b.barcode));
 }
 

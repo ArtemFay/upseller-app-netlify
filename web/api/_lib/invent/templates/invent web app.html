@@ -957,12 +957,43 @@
         color: var(--muted);
       }
 
-      /* Левая колонка — Поиск+Баркод (растягивается). Правая — Кол-во (фиксирована, max ~9999). */
+      /* 3 колонки: Баркод (растягивается) | Кол-во (фикс) | Проверено (узкий чекбокс).
+         Галочка вынесена сюда, чтобы можно было быстро отметить все строки короба
+         не выходя из модалки в полотно. */
       .item-grid {
         display: grid;
-        grid-template-columns: 1fr 88px;
+        grid-template-columns: 1fr 80px 56px;
         gap: 10px;
         align-items: start;
+      }
+      .item-verify-field {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .item-verify-field label {
+        margin-bottom: 4px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .item-verify-checkbox {
+        width: 22px;
+        height: 22px;
+        margin: 6px auto 0;
+        cursor: pointer;
+        accent-color: var(--wms-primary, #2d7ef7);
+      }
+
+      /* Кнопки массового переключения (поставить/снять все галочки) */
+      .items-bulk-actions {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+      }
+      .items-bulk-actions .button {
+        font-size: 12px;
+        padding: 6px 10px;
       }
 
       .item-note-preview {
@@ -2469,7 +2500,8 @@
             rowNumber: row.rowNumber,
             barcode: String(row.barcode || '').trim(),
             qty: Number(row.qty || 0),
-            sku: String(row.sku || '').trim()
+            sku: String(row.sku || '').trim(),
+            verified: !!row.verified
           })),
           barcodeOptions,
           typeOptions,
@@ -2604,7 +2636,12 @@
           originalQty: item.qty,
           sku: item.sku || '',
           isNew: false,
-          qtyChanged: false
+          qtyChanged: false,
+          // Берём текущий verified из payload. Default true для существующих item'ов:
+          // в модалку короб обычно открывают когда уже всё разложено — удобнее иметь
+          // галочки выставленными и снимать неподтверждённые, чем наоборот.
+          verified: item.verified !== false,
+          originalVerified: item.verified !== false
         }));
 
         renderModalItems();
@@ -2967,6 +3004,20 @@
         container.innerHTML = '';
         const validation = getModalValidationState();
 
+        // Bulk-кнопки галочек (только если есть хотя бы 2 item'а — для одного смысла мало).
+        const checkable = modal.items.filter(it => it.barcode);
+        if (checkable.length >= 2) {
+          const bulk = document.createElement('div');
+          bulk.className = 'items-bulk-actions';
+          const allOn = checkable.every(it => it.verified);
+          const allOff = checkable.every(it => !it.verified);
+          bulk.innerHTML = `
+            <button type="button" class="button" onclick="markAllModalItemsVerified(true)" ${allOn ? 'disabled' : ''}>Отметить все ✓</button>
+            <button type="button" class="button" onclick="markAllModalItemsVerified(false)" ${allOff ? 'disabled' : ''}>Снять все</button>
+          `;
+          container.appendChild(bulk);
+        }
+
         if (validation.unmergedDupeGroups > 0) {
           const mergeBtn = document.createElement('button');
           mergeBtn.type = 'button';
@@ -3011,6 +3062,13 @@
                 <label>Кол-во *</label>
                 <input type="number" min="0" step="1" value="${item.qty}" onchange="updateModalItemQty('${item.key}', this.value)">
               </div>
+              <div class="field item-verify-field">
+                <label>ПР</label>
+                <input type="checkbox" class="item-verify-checkbox"
+                       ${item.verified ? 'checked' : ''}
+                       ${item.barcode ? '' : 'disabled'}
+                       onchange="updateModalItemVerified('${item.key}', this.checked)">
+              </div>
             </div>
           `;
 
@@ -3018,6 +3076,22 @@
         });
 
         updateModalSaveButton(validation);
+      }
+
+      function updateModalItemVerified(key, checked) {
+        const item = modal.items.find(i => i.key === key);
+        if (!item) return;
+        item.verified = !!checked;
+        // Лёгкий ререндер только bulk-кнопок (вместо полного renderModalItems
+        // — чтобы не дёргать combobox-фокус).
+        renderModalItems();
+      }
+
+      function markAllModalItemsVerified(value) {
+        modal.items.forEach(it => {
+          if (it.barcode) it.verified = !!value;
+        });
+        renderModalItems();
       }
 
       // Merge duplicate barcode groups inside the box: top item gets the sum,
@@ -3416,7 +3490,9 @@
           row.barcode = item.barcode;
           row.sku = sourceRow ? sourceRow.sku : (barcodeRef.sku || '');
           row.qty = qtyNum;
-          row.verified = true;
+          // Для нового короба все строки сразу проверены (true).
+          // Для редактирования существующего — берём то, что выставил пользователь в модалке.
+          row.verified = payload.isNewBox ? true : !!item.verified;
           row.note = changeSummary;
           row.baseQty = baseQty;
           row.newQty = qtyNum !== baseQty ? qtyNum : null;
@@ -3506,7 +3582,9 @@
             rowNumber: item.rowNumber,
             barcode: item.barcode,
             qty: item.qty === '' ? '' : Number(item.qty),
-            mergedDuplicate: item.mergedDuplicate === true
+            mergedDuplicate: item.mergedDuplicate === true,
+            verified: !!item.verified,
+            verifiedChanged: !item.isNew && (item.verified !== item.originalVerified)
           })).filter(item => item.barcode)
         };
 
