@@ -1694,7 +1694,8 @@ async function getClientNameByReportId(reportId) {
  * READ-ONLY — never writes to the Upseller table.
  */
 async function getClientBarcodes(clientName) {
-  if (!clientName) return [];
+  const wanted = String(clientName || '').trim();
+  if (!wanted) return [];
   const sheets = await getSheets();
 
   const res = await sheets.spreadsheets.values.get({
@@ -1710,7 +1711,7 @@ async function getClientBarcodes(clientName) {
     const client = norm(row[0]);
     const sku = norm(row[1]);
     const barcode = norm(row[2]);
-    if (client === clientName && barcode && !seen.has(barcode)) {
+    if (client === wanted && barcode && !seen.has(barcode)) {
       seen.add(barcode);
       result.push({ barcode, sku });
     }

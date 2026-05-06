@@ -50,7 +50,11 @@ function expressToWebRequest(req) {
   }
   const init = { method: req.method, headers };
   if (!['GET', 'HEAD'].includes(req.method.toUpperCase())) {
-    if (req.body && req.body.length) init.body = req.body;
+    if (req.body && req.body.length) {
+      // Декодируем Node Buffer как UTF-8 строку — иначе Web Request.json()
+      // некорректно декодирует кириллицу (получается U+FFFD replacement character).
+      init.body = req.body.toString('utf8');
+    }
   }
   return new Request(url, init);
 }
