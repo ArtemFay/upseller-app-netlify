@@ -217,6 +217,94 @@ h3 { font-size: 15px; margin-bottom: 8px; }
   margin-bottom: 12px;
 }
 
+.start-screen {
+  display: grid;
+  gap: 12px;
+}
+
+.start-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.start-head h2 {
+  margin-bottom: 4px;
+}
+
+.start-stats {
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.supply-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.supply-cards .placeholder {
+  grid-column: 1 / -1;
+}
+
+.supply-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 7px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+
+.supply-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.supply-card h3 {
+  margin: 0;
+  font-size: 17px;
+  font-family: Consolas, "SF Mono", monospace;
+}
+
+.supply-client {
+  font-weight: 800;
+}
+
+.supply-stats {
+  display: flex;
+  gap: 18px;
+  color: var(--muted);
+}
+
+.supply-stats b {
+  color: var(--text);
+}
+
+.supply-preview {
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.supply-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .toolbar {
   display: flex;
   align-items: end;
@@ -277,6 +365,37 @@ th {
   border-radius: 10px;
   background: var(--panel);
   padding: 10px;
+}
+
+.item-card-body {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.item-image-slot {
+  width: 74px;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow: hidden;
+}
+
+.item-image-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.item-info {
+  min-width: 0;
 }
 
 .box-card.active {
@@ -594,6 +713,8 @@ th {
   .mode-switch { justify-content: stretch; }
   .mode-btn { flex: 1 1 auto; }
   table { min-width: 720px; }
+  .start-head { align-items: start; flex-direction: column; }
+  .supply-cards { grid-template-columns: 1fr; }
 }
 
 .mode-tsd .topbar {
@@ -605,11 +726,19 @@ th {
   min-height: 44px;
 }
 
-.mode-tsd .brand,
 .mode-tsd .brand-mark,
-.mode-tsd .brand p,
-.mode-tsd .mode-switch button:not(.active) {
+.mode-tsd .brand p {
   display: none;
+}
+
+.mode-tsd .brand {
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.mode-tsd .priemka-home-link {
+  width: 32px;
+  height: 32px;
 }
 
 .mode-tsd h1 {
@@ -623,10 +752,32 @@ th {
 }
 
 .mode-tsd .mode-switch {
-  width: 100%;
+  flex: 1 1 auto;
   justify-content: flex-end;
+  gap: 4px;
+}
+
+.mode-tsd .mode-btn {
+  min-height: 32px;
+  padding: 5px 7px;
+  font-size: 11px;
+  flex: 0 1 auto;
 }
 
 .mode-tsd .mode-btn.active {
-  width: 100%;
+  min-width: 44px;
+}
+
+.mode-tsd .supply-cards,
+.mode-phone .supply-cards {
+  grid-template-columns: 1fr;
+}
+
+.mode-tsd .start-head {
+  align-items: start;
+  flex-direction: column;
+}
+
+.mode-tsd .supply-card {
+  padding: 10px;
 }

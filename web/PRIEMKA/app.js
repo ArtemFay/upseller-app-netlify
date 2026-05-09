@@ -89,7 +89,6 @@ async function loadSupplyOptions() {
     state.events = [];
     state.errors = [];
     state.lastMessage = "Выберите поставку для начала приемки.";
-    enrichSupplyCounts();
   } catch (error) {
     state.loadError = error.message || String(error);
     state.lastMessage = `Не удалось загрузить список поставок: ${state.loadError}`;
@@ -117,29 +116,6 @@ async function loadBootstrap(supplyCode) {
   } finally {
     state.loading = false;
     render();
-  }
-}
-
-async function enrichSupplyCounts() {
-  const token = ++state.countsToken;
-  const options = state.supplyOptions.slice();
-  for (const option of options) {
-    if (token !== state.countsToken || state.supplySelected) return;
-    try {
-      const label = option.label || option.code || option.id;
-      const data = await apiJson(`/api/receiving/bootstrap?supply=${encodeURIComponent(label)}`);
-      if (token !== state.countsToken || state.supplySelected) return;
-      const unitsTotal = (data.items || []).reduce((sum, item) => sum + Number(item.plan || 0), 0);
-      const code = data.supply?.code || option.code;
-      state.supplyOptions = state.supplyOptions.map((item) => (
-        (item.code || item.id) === code
-          ? { ...item, skuCount: (data.items || []).length, unitsTotal, countsLoaded: true }
-          : item
-      ));
-      render();
-    } catch {
-      // Счетчики в списке не должны блокировать выбор поставки.
-    }
   }
 }
 
@@ -438,7 +414,7 @@ function renderKpis() {
 }
 
 function renderDesktop() {
-  if (!state.supplySelected) return `${renderSupplyPanel()}${renderStartHint()}`;
+  if (!state.supplySelected) return renderReceivingStart();
   return `${renderSupplyPanel()}
   ${renderKpis()}
   <section class="desktop-grid">
@@ -481,6 +457,50 @@ function renderStartHint() {
   </section>`;
 }
 
+function renderReceivingStart() {
+  return `<section class="start-screen">
+    <div class="start-head">
+      <div>
+        <h2>Поставки к приемке</h2>
+        <p class="muted">Источник: UPSELLER / ПОС_FILT. Состав заявки уже распарсен из колонки G.</p>
+      </div>
+      <div class="start-stats">${state.supplyOptions.length} ${pluralSupplies(state.supplyOptions.length)}</div>
+    </div>
+    <div class="supply-cards">
+      ${state.supplyOptions.length ? state.supplyOptions.map(renderSupplyCard).join("") : "<div class='placeholder'>Нет активных поставок для приемки.</div>"}
+    </div>
+  </section>`;
+}
+
+function pluralSupplies(n) {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "поставка";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "поставки";
+  return "поставок";
+}
+
+function renderSupplyCard(supply) {
+  const label = supply.label || supply.code || supply.id;
+  const statusClass = String(supply.status || "").replace(/\W+/g, "-").toLowerCase();
+  const preview = (supply.items || []).slice(0, 3).map((item) => `${escapeHtml(item.barcode)}: ${item.qty}`).join(" · ");
+  return `<article class="supply-card status-${escapeAttr(statusClass)}">
+    <div class="supply-card-head">
+      <h3>${escapeHtml(supply.code || supply.id)}</h3>
+      <span class="pill warn">${escapeHtml(supply.status || "к приемке")}</span>
+    </div>
+    <div class="supply-client">${escapeHtml(supply.client || "Клиент не указан")}</div>
+    <div class="supply-stats">
+      <span><b>${Number(supply.skuCount || 0)}</b> SKU</span>
+      <span><b>${Number(supply.unitsTotal || 0)}</b> шт</span>
+    </div>
+    <div class="supply-preview">${preview || "Состав заявки не заполнен"}</div>
+    <div class="supply-actions">
+      <button data-action="start-supply" data-supply="${escapeAttr(label)}">Начать</button>
+    </div>
+  </article>`;
+}
+
 function renderSupplySelect() {
   const options = state.supplyOptions.length
     ? state.supplyOptions
@@ -488,9 +508,7 @@ function renderSupplySelect() {
   return `<select class="supply-select"><option value="">Выберите поставку</option>${options.map((supply) => {
     const code = supply.code || supply.id;
     const label = supply.label || `${code} - ${supply.client || ""}`;
-    const meta = supply.countsLoaded || supply.unitsTotal
-      ? ` | ${Number(supply.skuCount || 0)} SKU | ${Number(supply.unitsTotal || 0)} шт`
-      : " | считаем SKU...";
+    const meta = ` | ${Number(supply.skuCount || 0)} SKU | ${Number(supply.unitsTotal || 0)} шт`;
     return `<option value="${escapeAttr(label)}" ${code === state.supply.code ? "selected" : ""}>${escapeHtml(label + meta)}</option>`;
   }).join("")}</select>`;
 }
@@ -597,7 +615,7 @@ function renderEventsPanel() {
 }
 
 function renderTablet() {
-  if (!state.supplySelected) return `${renderSupplyPanel()}${renderStartHint()}`;
+  if (!state.supplySelected) return renderReceivingStart();
   return `${renderSupplyPanel()}
   ${renderKpis()}
   <section class="tablet-layout">
@@ -670,8 +688,13 @@ function renderItemCards() {
     const fact = factForItem(item.id);
     const rem = item.plan - fact;
     return `<article class="item-card">
-      <div class="item-head"><strong>${escapeHtml(item.sku)}</strong><span class="pill ${rem ? "warn" : ""}">${rem ? `ост ${rem}` : "готово"}</span></div>
-      <div class="small muted">${item.barcode} | короткий ${item.barcode.slice(-5)}</div>
+      <div class="item-card-body">
+        <div class="item-image-slot">${item.imageUrl ? `<img src="${escapeAttr(item.imageUrl)}" alt="">` : "<span>Фото</span>"}</div>
+        <div class="item-info">
+          <div class="item-head"><strong>${escapeHtml(item.sku || item.name || item.barcode)}</strong><span class="pill ${rem ? "warn" : ""}">${rem ? `ост ${rem}` : "готово"}</span></div>
+          <div class="small muted">${item.barcode} | короткий ${item.barcode.slice(-5)}</div>
+        </div>
+      </div>
       <div class="actions">
         <button class="secondary" data-action="add-item" data-item="${item.id}">+1</button>
         <button class="secondary" data-action="add-qty" data-item="${item.id}">+ кол-во</button>
@@ -685,7 +708,7 @@ function renderErrors() {
 }
 
 function renderPhone() {
-  if (!state.supplySelected) return `<section class="phone-shell">${renderSupplyPanel()}${renderStartHint()}</section>`;
+  if (!state.supplySelected) return `<section class="phone-shell">${renderReceivingStart()}</section>`;
   return `<section class="phone-shell">
     <div class="phone-summary">${renderMiniKpis()}</div>
     ${renderSupplyPanel()}
@@ -700,7 +723,7 @@ function renderMiniKpis() {
 }
 
 function renderTsd() {
-  if (!state.supplySelected) return `<section class="tsd-shell">${renderSupplyPanel()}</section>`;
+  if (!state.supplySelected) return `<section class="tsd-shell">${renderReceivingStart()}</section>`;
   const box = boxByCode(state.activeBoxCode);
   const boxCode = box ? box.code : "НЕТ";
   const boxStatus = box ? `${statusText(box)} | шт: ${boxQty(box)}` : "Сканируйте QR короба";
@@ -798,6 +821,10 @@ function runAction(action, data = {}) {
   if (action === "scan") {
     processScan((input && input.value) || state.scanBuffer);
     if (input) input.value = "";
+  }
+  if (action === "start-supply") {
+    loadBootstrap(data.supply);
+    return;
   }
   if (action === "demo-box") processScan(state.boxes[0] ? state.boxes[0].code : "");
   if (action === "demo-scan") processScan(state.items[0] ? state.items[0].barcode : "");

@@ -3,8 +3,14 @@ import { FORM_OPTIONS } from './mock.js';
 
 const DEFAULT_SPREADSHEET_ID = '1wlz94rEXUEwkRLshk3l6YWXqMBBTSuClTWRU-Zbuvx8';
 const DEFAULT_SHEET_NAME = 'ПР';
+const DEFAULT_UPSELLER_ID = '1yORm5SHJlBXrJx2JwutCJXKLQjqqFozVxZqV0hu4a8Q';
+const POS_FILT_RANGE = "'ПОС_FILT'!A1:AY";
 function spreadsheetId() {
   return process.env.RECEIVING_SPREADSHEET_ID || DEFAULT_SPREADSHEET_ID;
+}
+
+function upsellerId() {
+  return process.env.UPSELLER_ID || process.env.SPREADSHEET_ID || DEFAULT_UPSELLER_ID;
 }
 
 function sheetName() {
@@ -31,8 +37,76 @@ function parseSupplyLabel(value) {
 }
 
 function parseNumber(value) {
-  const n = Number(String(value || '').replace(',', '.'));
+  const n = Number(String(value || '').replace(/\s/g, '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
+}
+
+function parseSupplyItemsLog(value) {
+  const rows = String(value || '')
+    .split(/\r?\n/)
+    .map((line, index) => {
+      const parts = line
+        .split('~')
+        .map((part) => String(part || '').replace(/[\u2060\uFEFF]/g, '').trim());
+      const barcode = parts[0] || '';
+      const qty = parseNumber(parts[1]);
+      if (!barcode || !qty) return null;
+      return {
+        id: `pos-item-${index + 1}-${barcode}`,
+        barcode,
+        qty,
+        plan: qty,
+        sku: '',
+        name: '',
+        imageUrl: '',
+        raw: line,
+        attrs: parts.slice(2),
+        dims: { w: 0, d: 0, h: 0 },
+        weight: 0,
+        shelfLife: '',
+      };
+    })
+    .filter(Boolean);
+  const byBarcode = new Map();
+  for (const item of rows) {
+    const existing = byBarcode.get(item.barcode);
+    if (existing) {
+      existing.qty += item.qty;
+      existing.plan = existing.qty;
+      existing.raw = `${existing.raw}\n${item.raw}`;
+      continue;
+    }
+    byBarcode.set(item.barcode, { ...item });
+  }
+  return Array.from(byBarcode.values());
+}
+
+function parsePosFiltRows(rows) {
+  return (rows || []).slice(1)
+    .map((row) => {
+      const number = String(row[4] || '').trim();
+      const client = String(row[5] || '').trim();
+      const items = parseSupplyItemsLog(row[6]);
+      const unitsTotal = items.reduce((sum, item) => sum + item.qty, 0);
+      const skuCount = new Set(items.map((item) => item.barcode)).size;
+      const status = String(row[21] || '').trim();
+      if (!number) return null;
+      return {
+        id: number,
+        code: number,
+        number,
+        label: client ? `${number}-${client}` : number,
+        client,
+        status,
+        skuCount,
+        unitsTotal,
+        items,
+        rawLog: String(row[6] || ''),
+        srcRow: parseNumber(row[47]),
+        srcKey: String(row[48] || number).trim(),
+      };
+    })
+    .filter(Boolean);
 }
 
 function sleep(ms) {
@@ -157,6 +231,14 @@ async function readCurrentItems(sheets) {
 
 export async function listSheetSupplyOptions({ includeCounts = false } = {}) {
   const sheets = getSheets();
+  const pos = await sheets.spreadsheets.values.get({
+    spreadsheetId: upsellerId(),
+    range: POS_FILT_RANGE,
+    valueRenderOption: 'FORMATTED_VALUE',
+  });
+  const posOptions = parsePosFiltRows(pos.data.values || []);
+  if (posOptions.length) return posOptions;
+
   const options = await readSupplyOptions(sheets);
   if (!includeCounts || !options.length) return options;
 
@@ -199,6 +281,66 @@ export async function loadSheetBootstrap(supplyId = '') {
   const sheets = getSheets();
   const id = spreadsheetId();
   const name = sheetName();
+  const pos = await sheets.spreadsheets.values.get({
+    spreadsheetId: upsellerId(),
+    range: POS_FILT_RANGE,
+    valueRenderOption: 'FORMATTED_VALUE',
+  });
+  const posOptions = parsePosFiltRows(pos.data.values || []);
+  const posSupply = posOptions.find((option) => (
+    option.label === supplyId || option.code === supplyId || option.id === supplyId || option.number === supplyId
+  ));
+
+  if (posSupply) {
+    const [receivers, productTypes, tareOwners] = await Promise.all([
+      readValidationOptions(sheets, 'C8'),
+      readValidationOptions(sheets, 'C9'),
+      readValidationOptions(sheets, 'C11'),
+    ]);
+    return {
+      context: { source: 'pos-filt', spreadsheetId: upsellerId(), sheetName: 'ПОС_FILT', srcRow: posSupply.srcRow },
+      meta: { loadedAt: new Date().toISOString(), version: 'receiving-pos-filt-v1' },
+      supply: {
+        id: posSupply.id,
+        code: posSupply.code,
+        label: posSupply.label,
+        client: posSupply.client,
+        date: '',
+        status: posSupply.status,
+        receiver: '',
+        operator: '',
+        shift: '',
+        productType: '',
+        tareOwner: '',
+        pallets: '',
+        extraCharge: '',
+        comment: '',
+        rawLog: posSupply.rawLog,
+      },
+      form: {
+        date: '',
+        receiver: '',
+        operator: '',
+        shift: '',
+        productType: '',
+        tareOwner: '',
+        pallets: '',
+        extraCharge: '',
+        comment: '',
+      },
+      formOptions: {
+        ...FORM_OPTIONS,
+        receivers: receivers.length ? receivers : FORM_OPTIONS.receivers,
+        productTypes: productTypes.length ? productTypes : FORM_OPTIONS.productTypes,
+        tareOwners: tareOwners.length ? tareOwners : FORM_OPTIONS.tareOwners,
+      },
+      items: posSupply.items.map((item) => ({ ...item, plan: item.qty })),
+      clientCatalog: [],
+      defaults: { boxDims: { w: 60, d: 40, h: 40 }, initialBoxCount: 9 },
+      supplyOptions: posOptions,
+    };
+  }
+
   const supplyOptions = await readSupplyOptions(sheets);
 
   if (supplyId) {

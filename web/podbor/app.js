@@ -676,13 +676,13 @@ function handleBoxModalClick(e) {
   const t = e.target;
   if (t.closest('#bmClose, #bmCancel')) { closeBoxModal(); return; }
   if (t.closest('#bmSave')) { saveBoxModal(); return; }
+  if (t.closest('#bmReset')) { onResetAll(); return; }
+  const resetBtn = t.closest('button.bc-reset');
+  if (resetBtn) { onResetBarcode(resetBtn.dataset.bar); return; }
   const stepBtn = t.closest('button[data-step]');
   if (stepBtn) { onStepClick(stepBtn); return; }
   const suggestBtn = t.closest('button.suggest');
   if (suggestBtn) { onSuggestClick(suggestBtn); return; }
-  // ВАЖНО: full-tile проверяем ДО ship-tile, т.к. full-tile имеет оба класса.
-  const fullTile = t.closest('button.full-tile');
-  if (fullTile) { onFullBoxTileClick(fullTile); return; }
   const tile = t.closest('button.ship-tile');
   if (tile) { onShipTileClick(tile); return; }
   const cellPill = t.closest('button.cs-pill');
@@ -821,8 +821,12 @@ function renderBoxModal() {
       </div>
       ${violations.length ? `<div class="bm-violations">${violations.map(v => `<div>⚠ ${escapeHtml(v)}</div>`).join('')}</div>` : ''}
       <div class="bm-actions">
-        <button type="button" class="btn btn-secondary" id="bmCancel">Отмена</button>
-        <button type="button" class="btn btn-primary" id="bmSave" ${canSave ? '' : 'disabled'}>Сохранить</button>
+        <button type="button" class="btn btn-ghost" id="bmReset" ${anyLayout(rows, draft, m) ? '' : 'disabled'}
+                title="Сбросить раскладку всего короба">↺ Сбросить короб</button>
+        <div class="bm-actions-right">
+          <button type="button" class="btn btn-secondary" id="bmCancel">Отмена</button>
+          <button type="button" class="btn btn-primary" id="bmSave" ${canSave ? '' : 'disabled'}>Сохранить</button>
+        </div>
       </div>
     </div>
   `;
@@ -833,7 +837,6 @@ function renderBoxModal() {
 }
 
 function renderFullBoxBody(rows, draft) {
-  const target = state.modalBox.fullBoxTarget || '';
   const summaryRows = rows.map(r => {
     const requested = Number(state.requestByBarcode[r.barcode] || 0);
     return `<tr>
@@ -844,34 +847,22 @@ function renderFullBoxBody(rows, draft) {
     </tr>`;
   }).join('');
   // В КОР целевой короб назначается автоматически при finalize (один-к-одному
-  // от исходного K-короба). UI tile-выбора нет — нечего выбирать.
+  // от исходного K-короба). В СВОБ полный короб уезжает на отгрузку «как есть»
+  // — номер исходного короба сохраняется, отдельный S-короб не выбирается.
   const targetBlock = isKorMode()
     ? `<div class="full-box-target full-box-auto">
         <span class="kor-auto-icon">🤖</span>
         <span class="kor-auto-text">Короб отгрузки назначается автоматически при завершении заявки</span>
       </div>`
-    : (() => {
-        const tilesHtml = state.shipBoxes.length === 0
-          ? `<div class="ship-empty">Коробов отгрузки нет.
-              <button type="button" class="create-ship-link">Создать →</button></div>`
-          : state.shipBoxes.map(b => {
-              const isSel = b.number === target;
-              return `<button type="button" class="ship-tile full-tile${isSel ? ' selected' : ''}"
-                data-ship-number="${escapeHtml(b.number)}"
-                title="${escapeHtml(b.number)}">
-                <span class="st-num">${b.short}</span>
-              </button>`;
-            }).join('');
-        return `<div class="full-box-target">
-          <label>Куда отгружать целиком ${target ? `→ <b>${escapeHtml(target)}</b>` : ''}</label>
-          <div class="ship-tiles">${tilesHtml}</div>
-        </div>`;
-      })();
+    : `<div class="full-box-target full-box-keep">
+        <span class="kor-auto-icon">📦</span>
+        <span class="kor-auto-text">Короб <b>${escapeHtml(state.modalBox.boxId)}</b> уходит на отгрузку целиком — номер сохраняется</span>
+      </div>`;
   return `
     <div class="full-box-info">
       <div class="full-box-explain">
         Весь короб (${rows.length} ${pluralStrok(rows.length)}, всего <b>${rows.reduce((s, r) => s + r.qty, 0)} шт</b>)
-        ${isKorMode() ? 'будет принят как один короб отгрузки.' : 'отгружается целиком в один короб отгрузки.'}
+        отгружается целиком.
       </div>
       <table class="full-box-summary">
         <thead><tr><th>BAR5</th><th>SKU</th><th class="num">КОЛ</th><th class="num">Заявка</th></tr></thead>
@@ -889,8 +880,15 @@ function renderBarcodeCard(r, slot) {
   const reqHtml = requested > 0
     ? `<span class="bc-req">Заявка: Н <b>${requested}</b> · С <b>${picked}</b> · Ещё <b>${still}</b></span>`
     : '<span class="bc-req bc-no-req">Не в заявке</span>';
+  const hasAny = (Number(slot.kolPodb) || 0) > 0
+    || (Number(slot.kolPerem) || 0) > 0
+    || !!slot.kudaPodb || !!slot.kudaPerem;
+  const resetBtn = hasAny
+    ? `<button type="button" class="bc-reset" data-bar="${escapeHtml(r.barcode)}" title="Сбросить раскладку этого баркода">✕</button>`
+    : '';
   return `
     <article class="barcode-card${requested > 0 ? ' is-requested' : ''}" data-barcode="${escapeHtml(r.barcode)}">
+      ${resetBtn}
       <header class="bc-head">
         <div class="bc-bar">
           <span class="bc-bar5">${escapeHtml(String(r.barcode).slice(-5))}</span>
@@ -1676,10 +1674,9 @@ function onFullBoxToggle() {
       return;
     }
     state.modalBox.fullBoxMode = true;
-    // В КОР target = AUTO_KOR_TARGET (backend назначит конкретный S-номер при finalize).
-    state.modalBox.fullBoxTarget = isKorMode()
-      ? AUTO_KOR_TARGET
-      : (state.modalBox.fullBoxTarget || '');
+    // КОР: backend сам назначает S-номер при finalize → AUTO_KOR_TARGET.
+    // СВОБ: короб уходит «как есть», номер исходного K-короба сохраняется.
+    state.modalBox.fullBoxTarget = isKorMode() ? AUTO_KOR_TARGET : state.modalBox.boxId;
     for (const r of state.modalBox.rows) {
       const d = state.modalBox.draft[r.barcode];
       if (!d) continue;
@@ -1691,16 +1688,48 @@ function onFullBoxToggle() {
   renderBoxModal();
 }
 
-function onFullBoxTileClick(btn) {
+function anyLayout(rows, draft, modal) {
+  if (modal && modal.fullBoxMode) return true;
+  for (const r of rows) {
+    const d = draft[r.barcode];
+    if (!d) continue;
+    if ((Number(d.kolPodb) || 0) > 0) return true;
+    if ((Number(d.kolPerem) || 0) > 0) return true;
+    if (d.kudaPodb || d.kudaPerem) return true;
+  }
+  return false;
+}
+
+function onResetBarcode(bar) {
+  if (!state.modalBox || !bar) return;
+  if (isKorMode()) { korBlockToast(); return; }
+  const d = state.modalBox.draft[bar];
+  if (!d) return;
+  d.kolPodb = 0;
+  d.kudaPodb = '';
+  d.kolPerem = 0;
+  d.kudaPerem = '';
+  // Если был ПОЛН КОРОБ — частичный сброс отдельной строки выводит из этого режима.
+  if (state.modalBox.fullBoxMode) {
+    state.modalBox.fullBoxMode = false;
+    state.modalBox.fullBoxTarget = '';
+  }
+  renderBoxModal();
+}
+
+function onResetAll() {
   if (!state.modalBox) return;
   if (isKorMode()) { korBlockToast(); return; }
-  const number = btn.dataset.shipNumber;
-  state.modalBox.fullBoxTarget = (state.modalBox.fullBoxTarget === number) ? '' : number;
-  // Применяем выбранный короб ко всем строкам.
   for (const r of state.modalBox.rows) {
     const d = state.modalBox.draft[r.barcode];
-    if (d) d.kudaPodb = state.modalBox.fullBoxTarget;
+    if (!d) continue;
+    d.kolPodb = 0;
+    d.kudaPodb = '';
+    d.kolPerem = 0;
+    d.kudaPerem = '';
   }
+  state.modalBox.fullBoxMode = false;
+  state.modalBox.fullBoxTarget = '';
   renderBoxModal();
 }
 
