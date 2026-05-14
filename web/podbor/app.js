@@ -44,6 +44,8 @@ const state = {
   zayavki: [],
   clients: [],
   clientFilter: '',
+  // Быстрый фильтр в шапке: 'all' | 'urgent' (сегодня+завтра).
+  quickFilter: 'all',
   activeZayavka: null,
   requestByBar5: {},
   requestByBarcode: {},
@@ -369,23 +371,74 @@ function fillClientFilter() {
   sel.disabled = false;
 }
 
+// ===== Urgency helpers: today / tomorrow / later по dateOtgr ("DD.MM") =====
+// Источник: БД_ЭКСП!E (FORMATTED_VALUE из Sheets) — обычно "ДД.ММ", но
+// безопасно парсим и более полные форматы "ДД.ММ.ГГ"/"ДД.ММ.ГГГГ".
+function parseDateOtgrDM(s) {
+  const m = String(s || '').match(/^\s*(\d{1,2})\.(\d{1,2})/);
+  if (!m) return null;
+  return { day: +m[1], month: +m[2] };
+}
+function urgencyOf(dateOtgr) {
+  const dm = parseDateOtgrDM(dateOtgr);
+  if (!dm) return 'later';
+  const today = new Date();
+  const tom = new Date(today);
+  tom.setDate(today.getDate() + 1);
+  if (dm.day === today.getDate() && dm.month === today.getMonth() + 1) return 'today';
+  if (dm.day === tom.getDate()   && dm.month === tom.getMonth() + 1)   return 'tomorrow';
+  return 'later';
+}
+
 function renderStartScreen() {
-  const filtered = state.clientFilter
+  let filtered = state.clientFilter
     ? state.zayavki.filter(z => z.client === state.clientFilter)
     : state.zayavki.slice();
-  filtered.sort((a, b) => {
+  if (state.quickFilter === 'urgent') {
+    filtered = filtered.filter(z => {
+      const u = urgencyOf(z.dateOtgr);
+      return u === 'today' || u === 'tomorrow';
+    });
+  }
+  const sortFn = (a, b) => {
     const ra = Z_STATUS_RANK[a.status] || 99;
     const rb = Z_STATUS_RANK[b.status] || 99;
     if (ra !== rb) return ra - rb;
     return String(a.dateOtgr).localeCompare(String(b.dateOtgr));
-  });
+  };
+  filtered.sort(sortFn);
+
   $('startStats').textContent = `${filtered.length} ${pluralZayavok(filtered.length)}`;
   const grid = $('zayavkiGrid');
   if (!filtered.length) {
-    grid.innerHTML = '<div class="placeholder">Нет активных заявок' + (state.clientFilter ? ' для выбранного клиента' : '') + '.</div>';
+    grid.className = 'zayavki-grid';
+    const reason = state.quickFilter === 'urgent' ? ' под срочный фильтр'
+                 : state.clientFilter ? ' для выбранного клиента' : '';
+    grid.innerHTML = `<div class="placeholder">Нет активных заявок${reason}.</div>`;
     return;
   }
-  grid.innerHTML = filtered.map(renderZayavkaCard).join('');
+
+  // Группировка: 🔥 СРОЧНО (today + tomorrow) сверху, отдельной секцией.
+  const urgent = filtered.filter(z => {
+    const u = urgencyOf(z.dateOtgr);
+    return u === 'today' || u === 'tomorrow';
+  });
+  const later = filtered.filter(z => urgencyOf(z.dateOtgr) === 'later');
+
+  const parts = [];
+  if (urgent.length) {
+    parts.push(`<h2 class="zg-header zg-urgent">🔥 Срочно — сегодня и завтра <span class="zg-count">${urgent.length}</span></h2>`);
+    parts.push(`<div class="zayavki-grid">${urgent.map(renderZayavkaCard).join('')}</div>`);
+  }
+  if (later.length) {
+    if (urgent.length) {
+      parts.push(`<h2 class="zg-header zg-later">Остальные <span class="zg-count">${later.length}</span></h2>`);
+    }
+    parts.push(`<div class="zayavki-grid">${later.map(renderZayavkaCard).join('')}</div>`);
+  }
+  grid.className = 'zayavki-groups';
+  grid.innerHTML = parts.join('');
+
   grid.querySelectorAll('button[data-action="start"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const num = e.currentTarget.dataset.num;
@@ -530,7 +583,18 @@ function renderZayavkaCard(z) {
                        : isContinuable ? 'zc-status-progress'
                        : 'zc-status-new';
   const ksLabel = z.ks !== 1 ? `<span class="ks-label" title="Коэффициент сложности">×${z.ks}</span>` : '';
-  const direction = [z.dateOtgr, z.mp || 'НЕТ', z.warehouse, z.finalWarehouse].filter(Boolean).join(' · ');
+  // Дата отгрузки — главный критерий приоритета; выносим в шапку, из direction убираем.
+  const direction = [z.mp || 'НЕТ', z.warehouse, z.finalWarehouse].filter(Boolean).join(' · ');
+  const urgency = urgencyOf(z.dateOtgr);
+  const urgencyCls = urgency === 'today' ? 'zc-urgency-today'
+                   : urgency === 'tomorrow' ? 'zc-urgency-tomorrow'
+                   : '';
+  const urgencyBadge = urgency === 'today'
+    ? '<span class="zc-urgent-badge zc-urgent-today">🔥 СЕГОДНЯ</span>'
+    : urgency === 'tomorrow'
+    ? '<span class="zc-urgent-badge zc-urgent-tomorrow">⚡ ЗАВТРА</span>'
+    : '';
+  const dateHtml = z.dateOtgr ? `<span class="zc-date" title="Дата отгрузки">${escapeHtml(String(z.dateOtgr))}</span>` : '';
   const tm = typeMeta(z.type);
   const pm = pickModeMeta(z.pickMode);
   // Кнопка: «Начать» для СОЗДАНО, «Продолжить» для В РАБОТЕ, lock для завершённых.
@@ -544,9 +608,11 @@ function renderZayavkaCard(z) {
     buttonHtml = `<button class="zayavka-btn primary" data-action="start" data-num="${escapeHtml(z.number)}">Начать →</button>`;
   }
   return `
-    <article class="zayavka-card ${pm.cls}-edge ${cardStatusCls}">
+    <article class="zayavka-card ${pm.cls}-edge ${cardStatusCls} ${urgencyCls}">
       <div class="zc-head">
         <h3 class="zc-num">${escapeHtml(z.number)}</h3>
+        ${dateHtml}
+        ${urgencyBadge}
         <span class="zc-status ${cls}">${escapeHtml(z.status)}</span>
       </div>
       <div class="zc-tags">
@@ -3648,6 +3714,23 @@ $('clientFilter').addEventListener('change', (e) => {
   state.clientFilter = e.target.value;
   renderStartScreen();
 });
+
+// Chip-фильтры в шапке списка заявок: 'all' / 'urgent'.
+// Одно активное значение, переключается по клику.
+const chipBar = document.getElementById('chipFilters');
+if (chipBar) {
+  chipBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip-filter');
+    if (!btn) return;
+    const v = btn.dataset.chip || 'all';
+    if (state.quickFilter === v) return;
+    state.quickFilter = v;
+    chipBar.querySelectorAll('.chip-filter').forEach(b => {
+      b.classList.toggle('is-active', b.dataset.chip === v);
+    });
+    renderStartScreen();
+  });
+}
 
 $('backBtn').addEventListener('click', backToStart);
 // CTA «Начать/Продолжить» в topbar — единый flow со click'ом по коробу.
