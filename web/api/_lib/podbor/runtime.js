@@ -1,4 +1,12 @@
 import QRCode from 'qrcode';
+import { addOp as syncAddOp, finishZayavkaFull, forwardRefresh } from './sync-engine.js';
+import { KorobyIndex } from './koroby-index.js';
+import { markInProgress, markFinished, markPartial, markClosed, readZayavkaStatus } from './bd-writer.js';
+import { appendEvent, updateMeta } from './events.js';
+import { loadActiveZayavki } from './zayavki.js';
+import { writeNachToSheet } from './nach-writer.js';
+import { buildFinishSummary, writeFinishSummary } from './bd-summary-writer.js';
+import { readState, archive, transact } from './zayavka-store.js';
 
 const boxLayoutStore = new Map();
 const shipBoxStore = new Map();
@@ -42,7 +50,21 @@ export function applyInventoryOverrides(data) {
   return data;
 }
 
-export function getShipBoxes(zayavkaId) {
+// Источник правды для ship-boxes = state-файл (event-store применяет
+// ship.create/ship.delete через applySideEffects в events.js). In-memory
+// shipBoxStore оставляем для legacy совместимости со старыми атомами, но
+// при чтении приоритет — state. Это переживает рестарт сервера и одинаково
+// видно всем планшетам (мульти-tablet sync).
+export async function getShipBoxes(zayavkaId) {
+  try {
+    const state = await readState(zayavkaId);
+    if (state && Array.isArray(state.shipBoxes)) {
+      return { zayavkaId, boxes: state.shipBoxes };
+    }
+  } catch (e) {
+    console.error('[podbor:getShipBoxes] readState failed:', e.message);
+  }
+  // Fallback: legacy in-memory cache (заявки которые не запускали zayavka.start).
   const entry = shipBoxStore.get(zayavkaId) || { boxes: [], nextSeq: 1 };
   return { zayavkaId, boxes: entry.boxes };
 }
@@ -147,7 +169,186 @@ export async function renderShipLabelsHtml({ boxes, client, dateOtgr, mp, zayavk
 </body></html>`;
 }
 
-export function applyPodborAtom(atom, ctx) {
+// Async dispatcher to sync engine (запись в "🍬 КОРОБЫ" через очередь).
+// Не блокирует основной apply — fire-and-log. Если ctx без zayavkaId/client,
+// пропускаем (например, legacy verified-атом без контекста).
+// Контекст заявки для записи в КОРОБЫ: M (склад), N (дата), и т.п.
+// Передаётся в payload каждого атома.
+function buildZayavkaContext(ctx) {
+  return {
+    warehouse: ctx.warehouse || '',
+    finalWarehouse: ctx.finalWarehouse || '',
+    dateOtgr: ctx.dateOtgr || '',
+    mp: ctx.mp || '',
+  };
+}
+
+// === EVENT STORE dispatching ===
+// Каждый атом превращается в событие в zayavki/<id>.json (primary store).
+// Параллельно — старый dispatchToSyncEngine (write-through к листу "🍬 КОРОБЫ").
+// Если эта функция упадёт — атом теряется НЕ полностью (sync engine продолжит
+// писать на лист), но JSON-state расходится. Логируем и не блокируем.
+
+// Кэш snapshot короба для full_to_ship (избегаем повторных read).
+let _korobySnapshot = null;
+let _korobySnapshotAt = 0;
+const SNAPSHOT_TTL_MS = 30000;
+
+async function getKorobySnapshot() {
+  const now = Date.now();
+  if (_korobySnapshot && (now - _korobySnapshotAt) < SNAPSHOT_TTL_MS) {
+    return _korobySnapshot;
+  }
+  _korobySnapshot = new KorobyIndex();
+  await _korobySnapshot.refresh();
+  _korobySnapshotAt = now;
+  return _korobySnapshot;
+}
+
+// Загрузить request items + ks/mp/warehouse + skuByBarcode при первом обращении.
+// SKU нормализуется через loadClientBoxes (первое непустое значение per баркод).
+async function loadZayavkaMeta(zayavkaId) {
+  try {
+    const all = await loadActiveZayavki();
+    const z = all.find(x => x.number === zayavkaId);
+    if (!z) return null;
+    // Подтянем SKU через loadClientBoxes (там есть normalized skuByBarcode).
+    let skuMap = {};
+    try {
+      const { loadClientBoxes } = await import('./boxes.js');
+      const data = await loadClientBoxes(z.client, null); // без zayavka, чтобы быстро
+      skuMap = data.skuByBarcode || {};
+    } catch (e) { /* не критично */ }
+    return {
+      client: z.client,
+      mp: z.mp,
+      ks: z.ks,
+      warehouse: z.warehouse,
+      finalWarehouse: z.finalWarehouse,
+      dateOtgr: z.dateOtgr,
+      requestItems: z.items.map(it => ({
+        barcode: it.barcode,
+        qty: it.qty,
+        sku: skuMap[it.barcode] || '',
+      })),
+    };
+  } catch (e) {
+    console.error('[podbor:event-store] loadZayavkaMeta failed:', e.message);
+    return null;
+  }
+}
+
+async function dispatchAtomToEventStore(atom, ctx) {
+  const { zayavkaId, client, user } = ctx;
+  if (!zayavkaId) return;
+  // Передаём фронт-контекст в updateMeta — он заполнит только пустые поля.
+  await updateMeta(zayavkaId, {
+    client: client || undefined,
+    mp: ctx.mp || undefined,
+    warehouse: ctx.warehouse || undefined,
+    finalWarehouse: ctx.finalWarehouse || undefined,
+    dateOtgr: ctx.dateOtgr || undefined,
+  });
+  try {
+    if (atom.type === 'box.set_layout') {
+      const items = [];
+      for (const [barcode, slots] of Object.entries(atom.barcodes || {})) {
+        items.push({
+          barcode,
+          kolPodb: Number(slots.kolPodb) || 0,
+          kudaPodb: String(slots.kudaPodb || ''),
+          kolPerem: Number(slots.kolPerem) || 0,
+          kudaPerem: String(slots.kudaPerem || ''),
+        });
+      }
+      await appendEvent(zayavkaId, {
+        type: 'set_layout', by: user,
+        payload: { source: atom.boxId, items },
+      });
+    } else if (atom.type === 'box.full_to_ship') {
+      // Snapshot короба-источника — нужен items[] для computed (free/paid).
+      const snap = await getKorobySnapshot();
+      const entries = snap.byKorobName(atom.boxId);
+      const items = entries
+        .filter(e => Number(e.qty) > 0)
+        .map(e => ({ barcode: e.barcode, qty: Number(e.qty), sku: e.sku }));
+      const newKorob = entries.length > 0
+        ? (entries[0].korob && entries[0].korob[0] && entries[0].korob[0] !== 'S' && entries[0].korob[0] !== 's'
+            ? 'S' + entries[0].korob.slice(1)
+            : entries[0].korob)
+        : atom.boxId;
+      await appendEvent(zayavkaId, {
+        type: 'full_to_ship', by: user,
+        payload: { source: atom.boxId, newKorob, owner: atom.owner || '', items },
+      });
+    } else if (atom.type === 'box.inventory_correction') {
+      await appendEvent(zayavkaId, {
+        type: 'inventory_correction', by: user,
+        payload: {
+          korob: atom.boxId,
+          barcode: atom.barcode,
+          old: Number(atom.oldKol) || 0,
+          new: Number(atom.novKol) || 0,
+          reason: atom.reason || '',
+        },
+      });
+    }
+  } catch (e) {
+    console.error('[podbor:event-store]', atom.type, e.message);
+  }
+}
+
+async function dispatchToSyncEngine(atom, ctx) {
+  const { zayavkaId, client, user } = ctx;
+  if (!zayavkaId || !client) return;
+  const zayavkaContext = buildZayavkaContext(ctx);
+  try {
+    if (atom.type === 'box.set_layout') {
+      const items = [];
+      for (const [barcode, slots] of Object.entries(atom.barcodes || {})) {
+        items.push({
+          barcode,
+          kolPodb: Number(slots.kolPodb) || 0,
+          kudaPodb: String(slots.kudaPodb || ''),
+          kolPerem: Number(slots.kolPerem) || 0,
+          kudaPerem: String(slots.kudaPerem || ''),
+        });
+      }
+      await syncAddOp(zayavkaId, {
+        type: 'set_layout',
+        user,
+        payload: { client, source_korob: atom.boxId, items, zayavkaContext },
+      });
+    } else if (atom.type === 'box.inventory_correction') {
+      await syncAddOp(zayavkaId, {
+        type: 'inventory_correction',
+        user,
+        payload: {
+          client,
+          korob: atom.boxId,
+          barcode: atom.barcode,
+          novKol: Number(atom.novKol) || 0,
+          reason: atom.reason || '',
+        },
+      });
+    } else if (atom.type === 'box.full_to_ship') {
+      await syncAddOp(zayavkaId, {
+        type: 'full_to_ship',
+        user,
+        payload: {
+          client,
+          source_korob: atom.boxId,
+          owner: atom.owner || '',
+          zayavkaContext,
+        },
+      });
+    }
+  } catch (e) {
+    console.error('[podbor:sync-dispatch]', atom.type, e.message);
+  }
+}
+
+export async function applyPodborAtom(atom, ctx) {
   if (!atom || !atom.type) {
     if (atom?.korob) {
       const key = `${atom.korob}|${atom.barcode || ''}`;
@@ -174,24 +375,40 @@ export function applyPodborAtom(atom, ctx) {
         };
       }
       boxLayoutStore.set(boxId, { barcodes: merged, updatedAt: Date.now(), by: ctx.user });
+      await dispatchAtomToEventStore(atom, ctx);
+      await dispatchToSyncEngine(atom, ctx);
       return { ok: true, type: atom.type, boxId };
     }
     case 'ship.create': {
-      const { zayavkaId, count, taraType } = atom;
+      const { zayavkaId, count, taraType, dimensions, owner } = atom;
       const n = Number(count);
       if (!zayavkaId || !Number.isFinite(n) || n < 1 || n > 200) {
         return { ok: false, error: 'ship.create requires { zayavkaId, count(1..200), taraType }' };
       }
       const prefix = shipPrefix(zayavkaId);
+      // Нумерация из state-файла (source of truth, переживает рестарт + видна
+      // всем планшетам). Cache shipBoxStore — secondary, на случай если state
+      // ещё не инициализирован.
+      const existingState = await readState(zayavkaId);
+      const stateBoxes = (existingState && existingState.shipBoxes) || [];
       let entry = shipBoxStore.get(zayavkaId);
-      if (!entry) entry = { boxes: [], nextSeq: 1 };
+      if (!entry) entry = { boxes: [] };
+      let baseMax = 0;
+      for (const b of stateBoxes) {
+        if (typeof b.short === 'number' && b.short > baseMax) baseMax = b.short;
+      }
+      for (const b of entry.boxes) {
+        if (typeof b.short === 'number' && b.short > baseMax) baseMax = b.short;
+      }
       const created = [];
       for (let i = 0; i < n; i++) {
-        const seq = entry.nextSeq++;
+        const seq = baseMax + 1 + i;
         created.push({
           number: `${prefix}-${pad3(seq)}`,
           short: seq,
           taraType: String(taraType || 'К_1.0'),
+          dimensions: dimensions || { w: 60, h: 40, d: 40 },
+          owner: owner || 'ФФ',
           status: 'open',
           createdAt: Date.now(),
           createdBy: ctx.user,
@@ -200,6 +417,30 @@ export function applyPodborAtom(atom, ctx) {
       entry.boxes.push(...created);
       shipBoxStore.set(zayavkaId, entry);
       generateQRsInBackground(created);
+      for (const box of created) {
+        try {
+          await syncAddOp(zayavkaId, {
+            type: 'ship_create',
+            user: ctx.user,
+            payload: {
+              number: box.number,
+              taraType: box.taraType,
+              dimensions: box.dimensions,
+              owner: box.owner,
+            },
+          });
+        } catch (e) { console.error('[podbor:sync-dispatch] ship_create', e.message); }
+        // EVENT STORE: append событие в primary state.
+        try {
+          await appendEvent(zayavkaId, {
+            type: 'ship.create', by: ctx.user,
+            payload: {
+              number: box.number, short: box.short,
+              taraType: box.taraType, dimensions: box.dimensions, owner: box.owner,
+            },
+          });
+        } catch (e) { console.error('[podbor:event-store] ship.create', e.message); }
+      }
       return { ok: true, type: atom.type, zayavkaId, created };
     }
     case 'ship.delete': {
@@ -214,12 +455,45 @@ export function applyPodborAtom(atom, ctx) {
           }
         }
       }
-      const entry = shipBoxStore.get(zayavkaId);
-      if (!entry) return { ok: false, error: 'заявка не найдена' };
-      const idx = entry.boxes.findIndex(box => box.number === number);
-      if (idx < 0) return { ok: false, error: 'короб не найден' };
-      entry.boxes.splice(idx, 1);
+      // Проверка существования: state — source of truth.
+      const stateForDel = await readState(zayavkaId);
+      const stateBoxesForDel = (stateForDel && stateForDel.shipBoxes) || [];
+      const cacheEntry = shipBoxStore.get(zayavkaId);
+      const cacheBoxes = (cacheEntry && cacheEntry.boxes) || [];
+      const existsInState = stateBoxesForDel.some(b => b.number === number);
+      const cacheIdx = cacheBoxes.findIndex(b => b.number === number);
+      if (!existsInState && cacheIdx < 0) {
+        return { ok: false, error: 'короб не найден' };
+      }
+      if (cacheIdx >= 0) cacheBoxes.splice(cacheIdx, 1);
+      // State.shipBoxes удалится через applySideEffects при appendEvent ship.delete.
+      try {
+        await syncAddOp(zayavkaId, {
+          type: 'ship_delete',
+          user: ctx.user,
+          payload: { number },
+        });
+      } catch (e) { console.error('[podbor:sync-dispatch] ship_delete', e.message); }
+      try {
+        await appendEvent(zayavkaId, {
+          type: 'ship.delete', by: ctx.user, payload: { number },
+        });
+      } catch (e) { console.error('[podbor:event-store] ship.delete', e.message); }
       return { ok: true, type: atom.type, zayavkaId, deleted: number };
+    }
+    case 'box.full_to_ship': {
+      // Сценарий B: трансформация исходных строк короба в строки отгрузки.
+      // НЕ создаёт нового короба отгрузки. Все строки исходного короба
+      // получают новый E (В СБОРКЕ), F+X (заявка), M (склад), N (дата),
+      // R (комментарий с КЛ/ФФ через перенос).
+      const { boxId, owner } = atom;
+      if (!boxId) return { ok: false, error: 'box.full_to_ship requires { boxId }' };
+      if (!ctx.zayavkaId || !ctx.client) {
+        return { ok: false, error: 'box.full_to_ship requires { zayavkaId, client } in body' };
+      }
+      await dispatchAtomToEventStore(atom, ctx);
+      await dispatchToSyncEngine(atom, ctx);
+      return { ok: true, type: atom.type, boxId, owner: owner || '' };
     }
     case 'box.inventory_correction': {
       const { boxId, barcode, novKol, oldKol, reason } = atom;
@@ -248,9 +522,179 @@ export function applyPodborAtom(atom, ctx) {
         }
         layout.updatedAt = Date.now();
       }
+      await dispatchAtomToEventStore(atom, ctx);
+      await dispatchToSyncEngine(atom, ctx);
       return { ok: true, type: atom.type, boxId, barcode, newQty };
+    }
+    case 'zayavka.start': {
+      const { zayavkaNumber, picker } = atom;
+      if (!zayavkaNumber || !picker) {
+        return { ok: false, error: 'zayavka.start requires { zayavkaNumber, picker }' };
+      }
+      try {
+        // Загружаем мета-инфо заявки (request items, ks, mp, склады, дата отгр)
+        // в event-store при первом старте — это primary source of truth.
+        const meta = await loadZayavkaMeta(zayavkaNumber);
+        if (meta) await updateMeta(zayavkaNumber, meta);
+        await appendEvent(zayavkaNumber, {
+          type: 'zayavka.start', by: picker, payload: { picker },
+        });
+        // Snapshot sourceOriginals при ПЕРВОМ старте (idempotent — последующие
+        // start'ы при partial_close → продолжении НЕ перезаписывают). Нужен для
+        // computed.js: free-классификация источника по ИСХОДУ (опустошён ли),
+        // а не по методу события (см. computed.js).
+        if (meta && meta.client) {
+          try {
+            await transact(zayavkaNumber, async state => {
+              if (state.sourceOriginals && Object.keys(state.sourceOriginals).length > 0) return;
+              const snap = await getKorobySnapshot();
+              const originals = {};
+              for (const entry of snap.byKey.values()) {
+                if (entry.client !== meta.client) continue;
+                if (!entry.korob || !entry.barcode) continue;
+                const qty = Number(entry.qty) || 0;
+                if (qty <= 0) continue;
+                // Не снэпшотим уже отгруженные/изъятые/собранные — это
+                // финальные статусы, источниками подбора служить не могут.
+                const st = String(entry.status || '').toUpperCase();
+                if (['В СБОРКЕ', 'СОБРАНО', 'ОТГРУЖЕНО', 'ИЗЪЯТО'].includes(st)) continue;
+                // Ячейки (tara='ЯЧ') ВКЛЮЧАЕМ в snapshot для live boxesView —
+                // подборщик должен видеть актуальный остаток в ячейке после
+                // перекладывания. Free-правило к ячейкам не применяем — см.
+                // computed.js classifier который игнорирует orig.tara=='ЯЧ'.
+                const k = String(entry.korob);
+                if (!originals[k]) originals[k] = { tara: entry.tara, items: {} };
+                const b = String(entry.barcode);
+                originals[k].items[b] = (originals[k].items[b] || 0) + qty;
+              }
+              state.sourceOriginals = originals;
+            });
+          } catch (e) {
+            console.error('[podbor:event-store] sourceOriginals snapshot failed:', e.message);
+          }
+        }
+        const r = await markInProgress(zayavkaNumber, picker);
+        return { ok: r.ok, type: atom.type, ...r };
+      } catch (e) {
+        return { ok: false, type: atom.type, error: e.message };
+      }
+    }
+    case 'zayavka.finish': {
+      const { zayavkaNumber, mode } = atom;
+      if (!zayavkaNumber) return { ok: false, error: 'zayavka.finish requires { zayavkaNumber }' };
+      const finishMode = mode === 'partial' ? 'partial' : 'full';
+      try {
+        await appendEvent(zayavkaNumber, {
+          type: 'zayavka.finish', by: ctx.user, payload: { mode: finishMode },
+        });
+        if (finishMode === 'partial') {
+          const r = await markPartial(zayavkaNumber);
+          return { ok: r.ok, type: atom.type, mode: 'partial', ...r };
+        }
+        // mode='full' — атомарный финиш:
+        //   1. mass transition В СБОРКЕ → СОБРАНО на листе КОРОБЫ.
+        //   2. append строк начислений в лист НАЧ (из event-store).
+        //   3. writeFinishSummary (БД row U,V + W:AJ summary one-batch).
+        //   4. archive state-файла в _done/.
+        // Если любой шаг упал — НЕ делаем archive, статус не СОБРАНО,
+        // повторный finish воспроизведёт пайплайн с тем же state.
+        const scriptStartedAt = Date.now();
+        const t0 = Date.now();
+        // Pipeline distributes work to THREE different spreadsheets, so independent
+        // calls run in parallel — Promise.all reduces total wall-time from
+        // sum(steps) ≈ 60s sequential to max(step) ≈ 5-8s parallel.
+        //
+        //   - finishZayavkaFull → UPSELLER (🍬 КОРОБЫ): mass-status transition
+        //   - writeNachToSheet  → ПОДБОРЫ (НАЧ): append payroll rows (idempotent)
+        //   - finalState (read) → local file (instant)
+        //
+        // writeFinishSummary runs AFTER all three resolve because it needs
+        // transitioned/nachWritten/finalState in the BD summary payload. It
+        // writes to ПОДБОРЫ (БД) — same spreadsheet as NACH but different sheet.
+        const [t, nachRes, finalState] = await Promise.all([
+          finishZayavkaFull(zayavkaNumber).then(r => {
+            console.log(`[finish:perf] ${zayavkaNumber} finishZayavkaFull: ${Date.now() - t0}ms (transitioned=${r.transitioned})`);
+            return r;
+          }),
+          writeNachToSheet(zayavkaNumber).then(r => {
+            console.log(`[finish:perf] ${zayavkaNumber} writeNachToSheet: ${Date.now() - t0}ms (written=${r.written}, skipped=${r.skipped || false})`);
+            return r;
+          }),
+          readState(zayavkaNumber).then(r => {
+            console.log(`[finish:perf] ${zayavkaNumber} readState: ${Date.now() - t0}ms`);
+            return r;
+          }),
+        ]);
+        const summary = buildFinishSummary(finalState, {
+          transitioned: t.transitioned,
+          nachWritten: nachRes.written,
+          scriptStartedAt,
+        });
+        const t3 = Date.now();
+        const r = await writeFinishSummary(zayavkaNumber, summary);
+        console.log(`[finish:perf] ${zayavkaNumber} writeFinishSummary: ${Date.now() - t3}ms (ok=${r.ok}, reason=${r.reason || '-'})`);
+        console.log(`[finish:perf] ${zayavkaNumber} TOTAL: ${Date.now() - t0}ms (parallel pipeline)`);
+        // archive ТОЛЬКО при полном успехе. Если writeFinishSummary вернул
+        // ok:false (например not_found в БД-листе), state-файл оставляем в
+        // zayavki/ — иначе мы теряем pickedByBarcode/events заявки, а пользователь
+        // при «Продолжить» получает пустую заявку.
+        if (r.ok) {
+          try {
+            if (finalState) await archive(zayavkaNumber, finalState);
+          } catch (e) {
+            console.error('[podbor:archive]', zayavkaNumber, e.message);
+          }
+        }
+        return {
+          ok: r.ok, type: atom.type, mode: 'full',
+          transitioned: t.transitioned,
+          nachWritten: nachRes.written,
+          totalCharge: nachRes.totalCharge,
+          summary: {
+            shipBoxCount: summary.shipBoxCount,
+            totalUnits: summary.totalUnits,
+            freeUnits: summary.freeUnits,
+            paidUnits: summary.paidUnits,
+            durationHM: summary.durationHM,
+          },
+          ...r,
+        };
+      } catch (e) {
+        return { ok: false, type: atom.type, error: e.message };
+      }
+    }
+    case 'zayavka.partial_close': {
+      const { zayavkaNumber } = atom;
+      if (!zayavkaNumber) return { ok: false, error: 'zayavka.partial_close requires { zayavkaNumber }' };
+      try {
+        await appendEvent(zayavkaNumber, {
+          type: 'zayavka.partial_close', by: ctx.user, payload: {},
+        });
+        const r = await markPartial(zayavkaNumber);
+        return { ok: r.ok, type: atom.type, ...r };
+      } catch (e) {
+        return { ok: false, type: atom.type, error: e.message };
+      }
+    }
+    case 'zayavka.close': {
+      const { zayavkaNumber } = atom;
+      if (!zayavkaNumber) return { ok: false, error: 'zayavka.close requires { zayavkaNumber }' };
+      try {
+        await appendEvent(zayavkaNumber, {
+          type: 'zayavka.close', by: ctx.user, payload: {},
+        });
+        const r = await markClosed(zayavkaNumber);
+        return { ok: r.ok, type: atom.type, ...r };
+      } catch (e) {
+        return { ok: false, type: atom.type, error: e.message };
+      }
     }
     default:
       return { ok: false, error: 'unknown atom: ' + atom.type };
   }
+}
+
+// Чтение статуса заявки из БД (для отображения на фронте при заходе в заявку).
+export async function readBDStatus(zayavkaNumber) {
+  return readZayavkaStatus(zayavkaNumber);
 }

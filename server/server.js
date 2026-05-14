@@ -26,8 +26,15 @@ import podborShipBoxes from '../web/api/podbor-ship-boxes.js';
 import podborShipLabels from '../web/api/podbor-ship-labels.js';
 import podborShipLabelQr from '../web/api/podbor-ship-label-qr.js';
 import podborBoxLayouts from '../web/api/podbor-box-layouts.js';
+import podborState from '../web/api/podbor-state.js';
+import podborSyncLog from '../web/api/podbor-sync-log.js';
+import podborNach from '../web/api/podbor-nach.js';
+import podborPicklog from '../web/api/podbor-picklog.js';
+import podborArchiveList from '../web/api/podbor-archive-list.js';
+import podborArchiveDetail from '../web/api/podbor-archive-detail.js';
 import receivingSupplies from '../web/api/receiving-supplies.js';
 import receivingBootstrap from '../web/api/receiving-bootstrap.js';
+import { startScheduler as startPodborScheduler } from '../web/api/_lib/podbor/sync-engine.js';
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
@@ -113,6 +120,13 @@ app.get('/api/podbor/ship-boxes', adapt(podborShipBoxes));
 app.get('/api/podbor/ship-labels', adapt(podborShipLabels));
 app.get('/api/podbor/ship-label-qr', adapt(podborShipLabelQr));
 app.get('/api/podbor/box-layouts', adapt(podborBoxLayouts));
+app.get('/api/podbor/state', adapt(podborState));
+app.post('/api/podbor/state', adapt(podborState));
+app.get('/api/podbor/sync-log', adapt(podborSyncLog));
+app.get('/api/podbor/nach', adapt(podborNach));
+app.get('/api/podbor/picklog', adapt(podborPicklog));
+app.get('/api/podbor/archive-list', adapt(podborArchiveList));
+app.get('/api/podbor/archive-detail', adapt(podborArchiveDetail));
 
 // Приемка
 app.get('/api/receiving/supplies', adapt(receivingSupplies));
@@ -134,4 +148,6 @@ app.listen(PORT, HOST, () => {
   console.log(`[upseller] listening on ${HOST}:${PORT}`);
   console.log(`[upseller] WEB_ROOT:      ${WEB_ROOT}`);
   console.log(`[upseller] AUTH_DISABLED: ${AUTH_DISABLED ? 'YES (dev stub, no Google)' : 'NO (Google OAuth required)'}`);
+  // Старт фонового scheduler'а sync engine для Подбора (batch 2 мин, refresh 10 мин).
+  try { startPodborScheduler(); } catch (e) { console.error('[upseller] scheduler start failed:', e.message); }
 });

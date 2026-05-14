@@ -8,11 +8,12 @@ export default async function handler(request) {
     await requireUser(request);
     const url = new URL(request.url);
     const client = url.searchParams.get('client');
+    const zayavka = url.searchParams.get('zayavka') || null;
     if (!client) {
       return jsonResponse({ error: 'client param required' }, 400);
     }
     const t0 = Date.now();
-    const data = await loadClientBoxes(client);
+    const data = await loadClientBoxes(client, zayavka);
     applyInventoryOverrides(data);
     data.meta.loadMs = Date.now() - t0;
     return jsonResponse(data);

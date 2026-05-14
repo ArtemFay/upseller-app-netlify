@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upseller — История заявок</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/podbor/style.css">
+</head>
+<body class="auth-hidden">
+  <header class="topbar">
+    <div class="title">
+      <a href="/podbor/" class="back-btn" title="К Подборам">←</a>
+      <a href="/" class="home-link" title="На главную">🏠</a>
+      📜 ИСТОРИЯ ЗАЯВОК
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="user-chip" id="userChip" title="Пользователь">
+      <span class="user-avatar" id="userAvatar">?</span>
+      <span class="user-name" id="userName">—</span>
+    </div>
+  </header>
+
+  <section class="arch-filters">
+    <label class="arch-filter-field">
+      <span>Клиент содержит</span>
+      <input type="text" id="fClient" placeholder="напр. Шейдаков">
+    </label>
+    <label class="arch-filter-field">
+      <span>С даты</span>
+      <input type="date" id="fFrom">
+    </label>
+    <label class="arch-filter-field">
+      <span>По дату</span>
+      <input type="date" id="fTo">
+    </label>
+    <button type="button" class="arch-btn arch-btn-primary" id="btnApply">Применить</button>
+    <button type="button" class="arch-btn" id="btnReset">Сбросить</button>
+    <span class="arch-stats" id="archStats">—</span>
+  </section>
+
+  <main class="arch-main">
+    <div class="arch-table-wrap">
+      <table class="arch-table" id="archTable">
+        <thead>
+          <tr>
+            <th>Дата финиша</th>
+            <th>Заявка</th>
+            <th>Клиент</th>
+            <th>Сборщик</th>
+            <th>МП</th>
+            <th class="arch-num">Длит.</th>
+            <th class="arch-num">Сборы, ₽</th>
+            <th class="arch-num">Платных ед</th>
+            <th class="arch-num">Бесплатных ед</th>
+            <th class="arch-num">Коробов отгр.</th>
+          </tr>
+        </thead>
+        <tbody id="archTBody">
+          <tr><td colspan="10" class="arch-placeholder">Загружаем…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me');
+        const data = await res.json();
+        if (!data.user) { location.replace('/login/?next=' + encodeURIComponent(location.pathname)); return; }
+        window.__USER__ = data.user;
+        document.body.classList.remove('auth-hidden');
+        const s = document.createElement('script');
+        s.src = '/podbor/archive.js';
+        document.body.appendChild(s);
+      } catch (e) {
+        location.replace('/login/');
+      }
+    })();
+  </script>
+</body>
+</html>

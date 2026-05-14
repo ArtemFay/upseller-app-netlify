@@ -3,6 +3,7 @@
 // Контракт документирован в 1_CONST/03_CURRENT_GAS_SYSTEM.md § 5.
 
 import { getSheets } from '../google.js';
+import { getPodborySpreadsheetId } from './spreadsheet-id.js';
 
 // Парсер 'ЛОГ ЗАЯВКИ' (колонка J БД_ЭКСП).
 // Формат: "<barcode>⁠ - ⁠<qty>⁠\n<barcode>⁠ - ⁠<qty>⁠\n..."
@@ -48,8 +49,7 @@ export function normalizePickMode(q) {
 }
 
 export async function loadActiveZayavki() {
-  const id = process.env.PODBORY_ID;
-  if (!id) throw new Error('PODBORY_ID не установлен в переменных окружения Netlify.');
+  const id = getPodborySpreadsheetId();
   const sheets = getSheets();
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: id,

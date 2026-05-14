@@ -4,12 +4,20 @@
 // Контракт документирован в 1_CONST/03_CURRENT_GAS_SYSTEM.md § 2 / § 3.
 
 import { getSheets } from '../google.js';
+import { getKorobySpreadsheetId } from './spreadsheet-id.js';
+import { readState } from './zayavka-store.js';
 
 // Индексы в исходной строке `🍬 КОРОБЫ!C7:U` (от C, 0-indexed).
 const SRC_IDX = {
-  TARA: 0, KOROB_NUM: 1, STATUS: 2, TIP: 4, SKU: 5,
+  TARA: 0, KOROB_NUM: 1, STATUS: 2, ZAYAVKA: 3, TIP: 4, SKU: 5,
   QTY: 6, ADR: 7, MP: 16, CLIENT: 17, BARCODE: 18,
 };
+
+// Статусы коробов, которые НЕ показываем в полотне:
+// - ИЗЪЯТО — короб опустошён, в нём ничего нет.
+// - В СБОРКЕ — короб уже взят/собран в рамках текущего подбора (показываем
+//   как progress отдельно, не в списке доступных к подбору).
+const HIDDEN_STATUSES = new Set(['ИЗЪЯТО', 'В СБОРКЕ', 'СОБРАНО', 'ОТГРУЖЕНО']);
 
 const DEST_IDX = {
   TIP: 0, SKU: 1, MP: 2, CLIENT: 3,
@@ -61,16 +69,25 @@ function _calculateAvailability(sourceData, client) {
   return avail;
 }
 
+// КОЛ_СКЮ = количество УНИКАЛЬНЫХ БАРКОДОВ в коробе (qty>0).
+// Раньше считалось по SKU (артикул) — давало 1 для разных размеров одного
+// артикула, что не совпадает с реальностью (баркод у каждого размера свой).
+// Также игнорируем строки с qty=0 — короб мог иметь занулённую строку
+// после изъятий, она не должна добавлять "+1 баркод" к статистике.
 function _calculateBoxStats(rows) {
   const stats = {};
   for (const row of rows) {
     const box = String(row[SRC_IDX.KOROB_NUM] || '');
     const qty = Number(row[SRC_IDX.QTY]) || 0;
-    const sku = row[SRC_IDX.SKU];
-    if (!stats[box]) stats[box] = { totalQty: 0, skus: new Set() };
+    if (qty <= 0) continue;
+    const barcode = row[SRC_IDX.BARCODE];
+    if (!stats[box]) stats[box] = { totalQty: 0, barcodes: new Set() };
     stats[box].totalQty += qty;
-    if (sku) stats[box].skus.add(sku);
+    if (barcode) stats[box].barcodes.add(String(barcode));
   }
+  // Возвращаем shape совместимый с _mapRow — используем `.skus` имя для
+  // обратной совместимости (set теперь с баркодами).
+  for (const k of Object.keys(stats)) stats[k].skus = stats[k].barcodes;
   return stats;
 }
 
@@ -120,27 +137,31 @@ function _safeCompareBoxes(a, b) {
 }
 
 function _rowToObject(row) {
+  // ВАЖНО: barcode и korob приводим к String. Sheets возвращает большие
+  // числовые штрихкоды как Number (UNFORMATTED_VALUE), а frontend использует
+  // их как ключи (data-bar dataset, sравнения в onStepClick). Если row.barcode
+  // окажется number, а dataset.bar — string, `===` даст false → +/- кнопки
+  // не работают (max=0 → newVal=0). Принудительная string-нормализация.
   return {
-    tip: row[DEST_IDX.TIP] || '',
-    sku: row[DEST_IDX.SKU] || '',
-    mp: row[DEST_IDX.MP] || '',
-    client: row[DEST_IDX.CLIENT] || '',
-    vsegoVKor: row[DEST_IDX.VSEGO_V_KOR] || 0,
-    spisYach: row[DEST_IDX.SPIS_YACH] || '',
-    tara: row[DEST_IDX.TARA] || '',
-    status: row[DEST_IDX.STATUS] || '',
-    korob: row[DEST_IDX.KOROB] || '',
-    kolSku: row[DEST_IDX.KOL_SKU] || 0,
-    barcode: row[DEST_IDX.BARCODE] || '',
-    bar5: row[DEST_IDX.BAR5] || '',
-    adr: row[DEST_IDX.ADR] || '',
+    tip: String(row[DEST_IDX.TIP] || ''),
+    sku: String(row[DEST_IDX.SKU] || ''),
+    mp: String(row[DEST_IDX.MP] || ''),
+    client: String(row[DEST_IDX.CLIENT] || ''),
+    vsegoVKor: Number(row[DEST_IDX.VSEGO_V_KOR]) || 0,
+    spisYach: String(row[DEST_IDX.SPIS_YACH] || ''),
+    tara: String(row[DEST_IDX.TARA] || ''),
+    status: String(row[DEST_IDX.STATUS] || ''),
+    korob: String(row[DEST_IDX.KOROB] || ''),
+    kolSku: Number(row[DEST_IDX.KOL_SKU]) || 0,
+    barcode: String(row[DEST_IDX.BARCODE] || ''),
+    bar5: String(row[DEST_IDX.BAR5] || ''),
+    adr: String(row[DEST_IDX.ADR] || ''),
     qty: Number(row[DEST_IDX.QTY]) || 0,
   };
 }
 
 async function readUpsellerKoroby() {
-  const upsellerId = process.env.UPSELLER_ID;
-  if (!upsellerId) throw new Error('UPSELLER_ID не установлен в переменных окружения Netlify.');
+  const upsellerId = getKorobySpreadsheetId();
   const sheets = getSheets();
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: upsellerId,
@@ -150,23 +171,105 @@ async function readUpsellerKoroby() {
   return r.data.values || [];
 }
 
-export async function loadClientBoxes(clientName) {
+export async function loadClientBoxes(clientName, zayavkaNumber) {
   const sourceData = await readUpsellerKoroby();
   const emptyMeta = { boxes: 0, uniqueSku: 0, totalQty: 0, lines: 0 };
 
   if (!sourceData.length) {
-    return { client: clientName, groups: [], meta: emptyMeta, availability: {} };
+    return { client: clientName, groups: [], meta: emptyMeta, availability: {}, pickedByBarcode: {} };
   }
 
   const availability = _calculateAvailability(sourceData, clientName);
   const target = String(clientName).trim().toLowerCase();
+
+  // Прогресс по заявке: source of truth — event-store (data/podbor/zayavki/
+  // <id>.json). На лист "В СБОРКЕ" мы пишем для совместимости, но
+  // pickedByBarcode берём из computed JSON. Если state-файл ещё не создан
+  // (заявка не начата) — fallback на лист (исторические данные).
+  // ShipRows (содержимое коробов отгрузки для миксования) — пока с листа,
+  // так как в нём актуальные qty после flush sync engine.
+  let pickedByBarcode = {};
+  if (zayavkaNumber) {
+    const eventState = await readState(zayavkaNumber);
+    if (eventState && eventState.computed && eventState.computed.pickedByBarcode) {
+      pickedByBarcode = { ...eventState.computed.pickedByBarcode };
+    }
+  }
+  const shipRows = {}; // korobNumber → [ {barcode, qty, sku, ...} ]
+  if (zayavkaNumber) {
+    const targetZay = String(zayavkaNumber).trim();
+    for (const row of sourceData) {
+      const status = String(row[SRC_IDX.STATUS] || '').trim().toUpperCase();
+      if (status !== 'В СБОРКЕ') continue;
+      const zay = String(row[SRC_IDX.ZAYAVKA] || '').trim();
+      if (zay !== targetZay) continue;
+      const bar = String(row[SRC_IDX.BARCODE] || '').trim();
+      const qty = Number(row[SRC_IDX.QTY]) || 0;
+      if (qty <= 0) continue;
+      // Fallback: если event-store пуст по этому баркоду (например, заявка
+      // была начата в legacy-системе до перехода на JSON) — добавим в picked.
+      if (bar && !pickedByBarcode[bar]) pickedByBarcode[bar] = (pickedByBarcode[bar] || 0) + qty;
+      const box = String(row[SRC_IDX.KOROB_NUM] || '').trim();
+      if (!box) continue;
+      if (!shipRows[box]) shipRows[box] = [];
+      shipRows[box].push({
+        tip: String(row[SRC_IDX.TIP] || ''),
+        sku: String(row[SRC_IDX.SKU] || ''),
+        mp: String(row[SRC_IDX.MP] || ''),
+        client: String(row[SRC_IDX.CLIENT] || ''),
+        vsegoVKor: 0, spisYach: '',
+        tara: String(row[SRC_IDX.TARA] || ''),
+        status,
+        korob: box, // уже string
+        kolSku: 0,
+        barcode: bar, // уже string
+        bar5: bar.length > 5 ? bar.slice(-5) : bar,
+        adr: String(row[SRC_IDX.ADR] || ''),
+        qty,
+      });
+    }
+    // Заполняем vsegoVKor / kolSku для каждой строки внутри ship-box.
+    for (const box of Object.keys(shipRows)) {
+      const rows = shipRows[box];
+      const totalQty = rows.reduce((a, r) => a + (Number(r.qty) || 0), 0);
+      const uniqueBarcodes = new Set(rows.map(r => r.barcode).filter(Boolean));
+      for (const r of rows) {
+        r.vsegoVKor = totalQty;
+        r.kolSku = uniqueBarcodes.size;
+      }
+    }
+  }
+
+  // SKU-нормализация: один баркод = один SKU. На листе для одного баркода
+  // могут быть разные SKU (история переименований). Берём ПЕРВОЕ непустое
+  // значение per баркод и применяем его ко ВСЕМ строкам этого баркода
+  // (полотно, ship-rows, начисления). Долгосрочно SKU будет подтягиваться
+  // из справочника номенклатуры по баркоду.
+  const skuByBarcode = {};
+  for (const row of sourceData) {
+    const bar = String(row[SRC_IDX.BARCODE] || '').trim();
+    const sku = String(row[SRC_IDX.SKU] || '').trim();
+    if (bar && sku && !skuByBarcode[bar]) skuByBarcode[bar] = sku;
+  }
+  // Применяем normalized SKU к shipRows.
+  for (const rows of Object.values(shipRows)) {
+    for (const r of rows) {
+      if (r.barcode && skuByBarcode[r.barcode]) r.sku = skuByBarcode[r.barcode];
+    }
+  }
+
   const clientData = sourceData.filter(row => {
     const c = String(row[SRC_IDX.CLIENT] || '').trim().toLowerCase();
     const q = Number(row[SRC_IDX.QTY]) || 0;
-    return c === target && q > 0;
+    if (c !== target || q <= 0) return false;
+    // Не показываем уже собранные / изъятые / отгруженные — это завершённые
+    // строки. Они есть в snapshot, но не относятся к текущей работе.
+    const status = String(row[SRC_IDX.STATUS] || '').trim().toUpperCase();
+    if (HIDDEN_STATUSES.has(status)) return false;
+    return true;
   });
 
-  if (!clientData.length) return { client: clientName, groups: [], meta: emptyMeta, availability };
+  if (!clientData.length) return { client: clientName, groups: [], meta: emptyMeta, availability, pickedByBarcode, shipRows };
 
   const boxStats = _calculateBoxStats(clientData);
   let mapped = clientData.map(r => _mapRow(r, boxStats));
@@ -207,7 +310,10 @@ export async function loadClientBoxes(clientName) {
       groups.push(current);
       prevBar = bar;
     }
-    current.rows.push(_rowToObject(row));
+    const rowObj = _rowToObject(row);
+    // Normalize SKU: один баркод = один SKU (см. выше).
+    if (rowObj.barcode && skuByBarcode[rowObj.barcode]) rowObj.sku = skuByBarcode[rowObj.barcode];
+    current.rows.push(rowObj);
   }
 
   const uniqueBoxes = new Set();
@@ -223,6 +329,9 @@ export async function loadClientBoxes(clientName) {
     client: clientName,
     groups,
     availability,
+    pickedByBarcode,
+    shipRows,
+    skuByBarcode, // нормализованный (первое непустое) SKU per баркод
     meta: {
       boxes: uniqueBoxes.size,
       uniqueSku: uniqueSkus.size,

@@ -11,6 +11,10 @@ node_modules/
 # .env уже покрыт паттерном **/.env выше.
 server/data/
 
+# Sync engine runtime: очереди, locks, архив завершённых заявок.
+# data/users.json — whitelist, остаётся в git (см. git ls-files data/).
+data/podbor/
+
 # OS/editor noise
 .DS_Store
 Thumbs.db
@@ -25,3 +29,13 @@ Thumbs.db
 # PNG в корне репо — не должны коммититься (тестовые скриншоты).
 # Скриншоты для документации — кладите в archive/ или модульный docs/.
 /*.png
+
+# Скриншоты диагностики (chrome-devtools captures, bug-reports)
+data/*.png
+
+# Локальные diagnostic-скрипты (вне scope production deploy)
+scripts/test-*.mjs
+scripts/verify-*.mjs
+scripts/inject-*.mjs
+scripts/find-*.mjs
+scripts/cleanup-*.mjs

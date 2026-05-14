@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Подбор — Sync Log</title>
+  <style>
+    body { font: 13px/1.4 ui-monospace, "Cascadia Code", monospace; background: #0e0e10; color: #e2e2e8; margin: 0; padding: 16px; }
+    .bar { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .bar button, .bar input { padding: 6px 12px; border-radius: 4px; border: 1px solid #444; background: #1c1c20; color: #e2e2e8; font: inherit; }
+    .bar button { cursor: pointer; }
+    .bar button:hover { background: #2a2a30; }
+    .bar input[readonly] { color: #888; }
+    .testMode { display: inline-block; padding: 4px 10px; border-radius: 4px; font-weight: 700; }
+    .testMode.on { background: #3a2810; color: #ffb84d; border: 1px solid #ffb84d; }
+    .testMode.off { background: #3a1010; color: #ff6060; border: 1px solid #ff6060; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 4px 8px; vertical-align: top; border-bottom: 1px solid #2a2a30; }
+    th { color: #888; font-weight: 600; position: sticky; top: 0; background: #0e0e10; z-index: 1; }
+    tr:hover td { background: #18181c; }
+    .level-info { color: #aacfff; }
+    .level-warn { color: #ffd060; }
+    .level-error { color: #ff7060; }
+    .channel { color: #888; }
+    .ts { color: #666; white-space: nowrap; }
+    .data { font-size: 11px; color: #888; max-width: 600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .data:hover { white-space: normal; word-break: break-all; }
+    .empty { color: #666; padding: 30px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <strong>Sync Log</strong>
+    <span id="tm" class="testMode"></span>
+    <button id="refreshBtn">⟳ Refresh</button>
+    <button id="autoBtn">▶ Auto (2s)</button>
+    <button id="forceRefreshBtn">Force forward refresh (read sheet)</button>
+    <input id="zayavkaInput" placeholder="zayavkaId для force flush" size="20">
+    <button id="forceFlushBtn">Force flush</button>
+    <span id="counts" style="margin-left: auto; color: #888;"></span>
+  </div>
+  <table id="tbl">
+    <thead>
+      <tr><th>Time</th><th>Level</th><th>Channel</th><th>Message</th><th>Data</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="empty" class="empty">Логов пока нет. Сделай действие в Подборе и нажми Refresh.</div>
+
+<script>
+const tbody = document.getElementById('tbody');
+const emptyDiv = document.getElementById('empty');
+const tm = document.getElementById('tm');
+const counts = document.getElementById('counts');
+let autoTimer = null;
+let lastTs = 0;
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+}
+
+async function fetchAndRender() {
+  try {
+    const r = await fetch('/api/podbor/sync-log?limit=300');
+    const d = await r.json();
+    tm.textContent = d.testMode ? 'TEST MODE' : 'PROD MODE';
+    tm.className = 'testMode ' + (d.testMode ? 'on' : 'off');
+    if (!d.events || d.events.length === 0) {
+      tbody.innerHTML = '';
+      emptyDiv.style.display = 'block';
+      counts.textContent = '0 events';
+      return;
+    }
+    emptyDiv.style.display = 'none';
+    const stats = { info: 0, warn: 0, error: 0 };
+    const html = d.events.slice().reverse().map(e => {
+      stats[e.level] = (stats[e.level] || 0) + 1;
+      const dataStr = e.data ? JSON.stringify(e.data) : '';
+      const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<tr>
+        <td class="ts">${fmtTime(e.ts)}</td>
+        <td class="level-${e.level}">${e.level}</td>
+        <td class="channel">${esc(e.channel)}</td>
+        <td>${esc(e.message)}</td>
+        <td class="data" title="${esc(dataStr)}">${esc(dataStr)}</td>
+      </tr>`;
+    }).join('');
+    tbody.innerHTML = html;
+    counts.textContent = `${d.events.length} events · info=${stats.info||0} warn=${stats.warn||0} error=${stats.error||0}`;
+  } catch (e) {
+    counts.textContent = 'fetch error: ' + e.message;
+  }
+}
+
+document.getElementById('refreshBtn').onclick = fetchAndRender;
+document.getElementById('autoBtn').onclick = function() {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    this.textContent = '▶ Auto (2s)';
+  } else {
+    autoTimer = setInterval(fetchAndRender, 2000);
+    this.textContent = '⏸ Auto on';
+    fetchAndRender();
+  }
+};
+document.getElementById('forceRefreshBtn').onclick = async () => {
+  await fetch('/api/podbor/state', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action:'refresh'})
+  });
+  fetchAndRender();
+};
+document.getElementById('forceFlushBtn').onclick = async () => {
+  const id = document.getElementById('zayavkaInput').value.trim();
+  if (!id) return alert('Введи zayavkaId');
+  await fetch('/api/podbor/state', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action:'flush', zayavkaId: id, reason:'manual'})
+  });
+  fetchAndRender();
+};
+
+fetchAndRender();
+</script>
+</body>
+</html>

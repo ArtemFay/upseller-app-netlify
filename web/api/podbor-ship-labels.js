@@ -15,7 +15,7 @@ export default async function handler(request) {
       });
     }
 
-    const entry = getShipBoxes(zayavkaId);
+    const entry = await getShipBoxes(zayavkaId);
     let boxes = entry.boxes;
     const numbersFilter = url.searchParams.get('numbers');
     if (numbersFilter) {

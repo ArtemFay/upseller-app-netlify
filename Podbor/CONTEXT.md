@@ -26,9 +26,12 @@ last_updated: 2026-05-05
 | **Карточка заявки** (`КС`, `СКЮ`, `ЕД`, `СТАТУС`, `МП`, `СКЛАД`, `КОНЕЧН СКЛАД`, дата отгр) | `БД_ЭКСП` колонки B/F/G/H/M/N/O | БД WMS |
 | **Структура заявки** — нужные баркоды и количества (`НУЖН`) | `БД_ЭКСП.J` (`ЛОГ ЗАЯВКИ`, см. § 3.4 — формат с U+2060) | БД WMS |
 | Короба клиента (содержимое полотна) | `UPSELLER!🍬 КОРОБЫ!C7:U` (см. `lib/podbory-load.js`) | БД WMS |
-| Состояние раскладки (галочки, КОЛ ПОДБ/ПЕРЕМ, КУДА…) | mock in-memory `verifiedStore` в `server.js` | БД WMS |
-| Открытые коробы отгрузки активной заявки | TBD: `🍬 КОРОБЫ` где `F = S<NNNN>` и статус ∈ {`В РЕЗЕРВЕ`, `В УПАКОВКЕ`} | БД WMS |
+| Состояние раскладки (галочки, КОЛ ПОДБ/ПЕРЕМ, КУДА…) | event-store JSON `${PODBOR_DATA_DIR}/zayavki/<id>.json` (events + computed) | БД WMS |
+| Открытые коробы отгрузки активной заявки | `🍬 КОРОБЫ` где `F = <zayavkaId>` и статус `В СБОРКЕ` | БД WMS |
 | `ЯЧ`-ячейки клиента | `🍬 КОРОБЫ` где `B = ЯЧ AND T = client` | БД WMS |
+| **Начисления** (зарплата подборщикам) | **Отдельная таблица `НАЧИСЛЕНИЯ`** (`NACHISLENIYA_ID=1tbUsKXEZK_…`), лист `НАЧ`, A:O 15 колонок (см. nach-writer.js). НЕ путать с ПОДБОРЫ. | БД WMS |
+| **finish-summary** (статус СОБРАНО + сводка по заявке) | `ПОДБОРЫ.БД` колонки `U` (статус), `V` (timestamp), `W:AJ` (24 поля: SKU, ед, free/paid, коробы, сборы, лог, длительности) | БД WMS |
+| **Архив завершённых заявок** | JSON-снимки в `${PODBOR_DATA_DIR}/_done/<id>-<ISO_ts>.json` (после успешного finish), доступны через UI `/podbor/archive.html` | БД WMS |
 
 SA-доступ ко всем таблицам уже есть.
 
@@ -614,6 +617,66 @@ INVENT_WEB/web/
 - `UPSELLER_ID = 1yORm5SHJlBXrJx2JwutCJXKLQjqqFozVxZqV0hu4a8Q`
 - `PODBORY_ID = 1mTVGXZgLh93O4lTTSXVr0cZ9Eu34urDm3jFJioorciM`
 
+### TEST MODE (песочница для отработки sync engine)
+
+Когда `PODBOR_TEST_MODE=true` + `PODBOR_TEST_SPREADSHEET_ID=<id>`, **все READ/WRITE Подбора** идут в указанную тестовую таблицу. Боевые UPSELLER/ПОДБОРЫ при этом **не трогаются**. Тестовая таблица содержит копии всех нужных листов: `🍬 КОРОБЫ`, `БД`, `ВР`, `БД_ЭКСП`. Резолв: `web/api/_lib/podbor/spreadsheet-id.js`.
+
+Текущая тестовая таблица: `1jEfFrlDM-IZoGF9OCrxy3sq1zCIO0aaIZWVK3Urcd7o` (расшарена на `sheets-bot@sheet-ai-491412`).
+
+Banner про активный test mode появляется в логах сервера при первом обращении к Sheets API.
+
+### Структура колонок `🍬 КОРОБЫ` (range `A7:U`, 21 колонка)
+
+| Idx | Col | Header | Описание |
+|-----|-----|--------|----------|
+| 0 | A | БАР_5 | **служебная**, последние 5 цифр баркода (для сортировки) |
+| 1 | B | ДАТА СОЗ | дата создания/изменения строки `DD.MM.YY` |
+| 2 | C | ТАРА | тип тары (`К_1.0`, `ЯЧ`, и т.д.) |
+| 3 | D | 📦 (КОРОБ) | номер короба (`S1234-001`, `Б3403-001`, ячейка) |
+| 4 | E | СТАТУС КОРОБА | `ХРАНЕНИЕ`/`ГОТОВО`/`СОБРАНО`/`В СБОРКЕ`/`ОТГРУЖЕНО`/... |
+| 5 | F | ЗАЯВКА | `<№ подбора>-<клиент>` (для коробов отгрузки) |
+| 6 | G | ТИП ТОВАРА | `УТ ГОТОВ`/`БРАК`/... |
+| 7 | H | SKU | артикул |
+| 8 | I | КОЛ | количество |
+| 9 | J | АДР | адрес физического короба |
+| 10 | K | КОЛ СКЮ | (формула в листе) |
+| 11 | L | ГОДЕН ДО | срок годности |
+| 12 | M | СКЛАД НАЗН | склад назначения (TODO в МVP) |
+| 13 | N | СЛОТ | слот отгрузки (TODO) |
+| 14 | O | ВЕС кг. | (формула) |
+| 15 | P | % ЗАП | (формула) |
+| 16 | Q | V, л | (формула) |
+| 17 | R | КОММЕНТАРИЙ | свободный текст |
+| 18 | S | МП | маркетплейс (`WB`/`OZ`/...) |
+| 19 | T | КЛИЕНТ | имя клиента (может быть пустым в копиях) |
+| 20 | U | БАРКОД | полный баркод |
+
+**Важно при append'е новой строки**: обязательно заполнять A (БАР_5 = последние 5 цифр баркода) и B (ДАТА СОЗ = сегодня), иначе сортировка/индексация листа ломается. Колонки K, O, P, Q, U+1+... — формулы, их не трогаем.
+
+**Поиск строки в snapshot'е**: ключ = `(korob, barcode)`, без клиента. Колонка КЛИЕНТ может быть пустой в тестовых копиях (заполняется формулой), а ЗАЯВКА — всегда есть.
+
+### Структура колонок `БД` (data start row 4)
+
+| Col | Header | Применение |
+|-----|--------|-----------|
+| A | ID | внутренний ID |
+| B | КЛИЕНТ | имя клиента |
+| F | № ПОДБОРА | поисковый ключ для sync (по нему находим строку) |
+| **G** | **СБОРЩИК** | пишется при `zayavka.start` (имя подборщика) |
+| **U** | **СТАТУС** | `СОЗДАНО`/`В РАБОТЕ`/`ЧАСТИЧНО СОБРАНА`/`СОБРАНО` |
+| **V** | **ДАТА ИЗМ СТАТУСА** | `DD.MM.YY HH:MM` — момент перехода |
+
+Поиск строки заявки в БД: по точному совпадению F (№ ПОДБОРА). Запись делается **немедленно** (forced flush в обход 2-минутной очереди КОРОБЫ).
+
+### Sync engine — backend-driven таймеры
+
+- `BATCH_TICK_MS = 120000` (2 мин) — flush очередей всех активных заявок одной пачкой.
+- `REFRESH_TICK_MS = 600000` (10 мин) — re-read `🍬 КОРОБЫ` для forward sync.
+- Микро-инвент / смена адреса / set_layout / ship.create — **через очередь** (2-минутный батч).
+- `zayavka.start/finish/partial_close/close` — **немедленно** (записи в БД, обход очереди).
+
+Прозрачность: `GET /api/podbor/sync-log` (ring buffer), dev-страница `/podbor/sync-log.html`.
+
 Уже должны быть установлены (для INVENT): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN`, `GOOGLE_WEB_CLIENT_ID`, `SESSION_SECRET`, `ADMIN_EMAIL`.
 
 **URL-маршруты**:
@@ -738,3 +801,66 @@ INVENT_WEB/web/
 - Может возникнуть соблазн сделать «универсальный» компонент, плохо работающий и там и там. Митигация: BoxModal остаётся идейно одна, но рендерит разные layout-шаблоны (`mode='tablet'` vs `mode='tsd'`) — `props` те же, разметка разная.
 
 **Оценка**: преимущества общего кода многократно перекрывают риски в нашем размере склада (≤10 подборщиков, ≤30 заявок/день).
+
+## 12. Финиш-pipeline и эксплуатационные правила (актуально на 2026-05-14)
+
+### 12.1. Pipeline `zayavka.finish mode=full`
+
+Шаги (исполняются параллельно в `runtime.js:582-637` через `Promise.all`):
+1. **🍬 КОРОБЫ** (`UPSELLER_ID`) — массовая транзиция `В СБОРКЕ` → `СОБРАНО` через `finishZayavkaFull` под `sheetsMutex`.
+2. **НАЧ** (`NACHISLENIYA_ID` — **отдельная таблица**, не путать с ПОДБОРЫ) — append строк начислений по `computed.nach.paidByBarcode`. **Идемпотентен**: перед append проверяет нет ли уже строк с этим `zayavkaId` (skip с `reason: 'already_written'`).
+3. **readState** (локальный JSON) — синхронный read.
+
+После Promise.all — последовательно:
+4. **ПОДБОРЫ.БД** — `writeFinishSummary` пишет `U` (статус СОБРАНО), `V` (timestamp), `W:AJ` (24 поля сводки).
+5. **archive** — state-файл переезжает в `_done/<id>-<ISO_ts>.json`. **Только при `writeFinishSummary.ok === true`** — иначе state остаётся в `zayavki/` и пользователь может продолжить.
+
+Wall-time на проде: **5–10 сек** (параллельный pipeline). На dev с агрессивным batch-tick (≤5с) может растягиваться из-за Sheets API throttling (60 reads/min/user).
+
+### 12.2. PERF-логи в stdout
+
+Каждый из 4 шагов печатает `[finish:perf] <zayavkaId> <step>: <ms>` — для диагностики медленных финишей на проде.
+
+### 12.3. Известные ограничения (open задачи)
+
+- **Не-атомарность 3 шагов**: если шаг 4 (ПОДБОРЫ.БД `writeFinishSummary`) упал после шагов 1+2, КОРОБЫ уже переведены в СОБРАНО, НАЧ записан, а БД не помечена. Повторный finish: NACH skip'нет дубль (идемпотентен), `finishZayavkaFull` no-op (уже СОБРАНО), `writeFinishSummary` ретраит. Это semi-acceptable, но в долгосрочном плане нужен **pre-validation + true rollback** (см. `memory/project_podbor_archive_and_atomic_finish.md`).
+- **Per-zayavka mutex deadlock** в `zayavka-store.js` лечится `LOCK_TIMEOUT_MS=30000` (Promise.race). Без таймаута одна зависшая операция блокировала всю заявку, рестарт сервера лечил. См. `memory/project_mutex_deadlock_zayavka_store.md`.
+- **Sheets API rate limit**: read 60/min/user, write 60/min/user. На проде `PODBOR_BATCH_TICK_MS=10000` + `PODBOR_REFRESH_TICK_MS=60000` дают запас. Dev может ронять квоту при `BATCH_TICK_MS<10000` и >5 активных заявках — установить выше.
+
+### 12.4. Нормализация баркодов (Озон-префикс)
+
+`web/podbor/app.js:231-260` — `normBar(s)` оставляет только цифры. Озон в заявке указывает баркод как `3492817446`, на листе `🍬 КОРОБЫ` тот же товар — `OZN3492817446`. Все lookups (`requestedFor`, `pickedByBarcode`, `pickedByBar5`) сравнивают через `normBar` — иначе «не в заявке» / финиш-mismatch на каждом Озон-товаре.
+
+### 12.5. Архив заявок (UI)
+
+- Меню → 📜 **История заявок** → `/podbor/archive.html` (список с фильтрами клиент / даты)
+- Клик по строке → `/podbor/archive-detail.html?zayavka=<id>` (полная карточка: events timeline, NACH, ship-коробы, source-коробы)
+- Endpoint'ы: `GET /api/podbor/archive-list`, `GET /api/podbor/archive-detail`
+- Источник: `${PODBOR_DATA_DIR}/_done/*.json` — append-only после успешного finish.
+- Read-only: редактировать архив нельзя.
+
+### 12.6. Цвета статусов коробов
+
+Зафиксировано в [`1_CONST/03_CURRENT_GAS_SYSTEM.md`](../../1_CONST/03_CURRENT_GAS_SYSTEM.md) § 3a и в `web/podbor/style.css` (секция `=== Цвета статусов коробов ===`). Применяется к колонке `СТАТУС` в полотне и в архив-вью.
+
+### 12.7. Env-переменные (актуальный список)
+
+| Переменная | Назначение | Prod-значение |
+|---|---|---|
+| `PORT` | порт Express | `3010` |
+| `HOST` | bind interface | `127.0.0.1` (за nginx) |
+| `DATA_DIR` | корень для общих state-файлов | `/var/lib/upseller` |
+| `PODBOR_DATA_DIR` | абс. путь для state-файлов Подбора | `/var/lib/upseller-podbor` |
+| `COOKIE_SECURE` | https-cookie | `true` |
+| `AUTH_DISABLED` | dev-stub без Google-логина | не задавать (= false) |
+| `GOOGLE_SERVICE_ACCOUNT_KEY_PATH` | путь к JSON-ключу SA | `/etc/upseller/sheets-bot-sa.json` |
+| `GOOGLE_WEB_CLIENT_ID` | OAuth client для login-popup | `1076554435170-...` |
+| `SESSION_SECRET` | JWT signing key (≥32 chars) | новый `openssl rand -hex 32` |
+| `ADMIN_EMAIL` | bootstrap admin whitelist | `psgl2007@gmail.com` |
+| `SPREADSHEET_ID` / `UPSELLER_ID` | UPSELLER (🍬 КОРОБЫ) | `1yORm5SHJ...` |
+| `PODBORY_ID` | ПОДБОРЫ (БД, БД_ЭКСП, ВР) | `1mTVGXZgLh...` |
+| `NACHISLENIYA_ID` | НАЧИСЛЕНИЯ (лист `НАЧ`) | `1tbUsKXEZK...` |
+| `INVENT_SPREADSHEET_ID` | INVENT (legacy) | `1xHs4IWsl...` |
+| `PODBOR_TEST_MODE` | редирект всех R/W Подбора в тестовую таблицу | не задавать (=false) |
+| `PODBOR_BATCH_TICK_MS` | период flush очерёди → Sheets | `10000` (10с) |
+| `PODBOR_REFRESH_TICK_MS` | период hard re-read 🍬 КОРОБЫ | `60000` (60с) |
