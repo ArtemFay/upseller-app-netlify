@@ -53,9 +53,15 @@ fi
 cp "$SRC_DIR/package.json"       "$APP_DIR/package.json"
 cp "$SRC_DIR/package-lock.json"  "$APP_DIR/package-lock.json" 2>/dev/null || true
 
-# === server/ — только server.js + setup.sh (для самообновления) ===
-cp "$SRC_DIR/server/server.js"   "$APP_DIR/server/server.js"
-cp "$SRC_DIR/server/setup.sh"    "$APP_DIR/server/setup.sh"
+# === server/ — все .js + setup.sh (для самообновления) ===
+# Раньше копировали по одному файлу (server.js, setup.sh) — при добавлении
+# нового модуля в server/ деплой ломался ERR_MODULE_NOT_FOUND, пока вручную
+# не копировали файл (инцидент 2026-05-15 с env-validator.js).
+# rsync с include='*.js'/'*.sh' и без --delete: подтягивает все исходники
+# server/, не трогает server/.env (уже мигрированный в корень) и node_modules.
+rsync -a \
+  --include='*.js' --include='*.sh' --exclude='*' \
+  "$SRC_DIR/server/" "$APP_DIR/server/"
 chmod +x "$APP_DIR/server/setup.sh"
 
 # === web/ — статика + API (источник правды) через rsync с --delete ===
