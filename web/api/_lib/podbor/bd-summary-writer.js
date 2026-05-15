@@ -27,6 +27,7 @@ import { getSheets } from '../google.js';
 import { getPodborySpreadsheetId } from './spreadsheet-id.js';
 import { logEvent } from './sync-log.js';
 import { buildZayavkaLog } from './zayavka-log.js';
+import { withRetry } from './sheets-retry.js';
 
 const SHEET_NAME = 'БД';
 
@@ -59,11 +60,11 @@ function fmtScriptDuration(ms) {
 export async function findRowByZayavkaNumber(zayavkaNumber) {
   const sheets = getSheets();
   const id = getPodborySpreadsheetId();
-  const r = await sheets.spreadsheets.values.get({
+  const r = await withRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: id,
     range: `'${SHEET_NAME}'!F:F`,
     valueRenderOption: 'UNFORMATTED_VALUE',
-  });
+  }), { label: `bd.findRow(${zayavkaNumber})` });
   const values = r.data.values || [];
   for (let i = 0; i < values.length; i++) {
     const v = String(values[i][0] || '').trim();
@@ -254,10 +255,10 @@ export async function writeFinishSummary(zayavkaNumber, summary) {
   for (const [col, value] of Object.entries(fields)) {
     data.push({ range: `'${SHEET_NAME}'!${col}${row}`, values: [[value]] });
   }
-  await sheets.spreadsheets.values.batchUpdate({
+  await withRetry(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: id,
     requestBody: { valueInputOption: 'USER_ENTERED', data },
-  });
+  }), { label: `bd.batchUpdate(${zayavkaNumber})` });
   logEvent('info', 'sheet', `БД: ${zayavkaNumber} finish-summary записан в W:AJ`, {
     row, totalUnits: summary.totalUnits, freeUnits: summary.freeUnits,
     paidUnits: summary.paidUnits, totalCharge: summary.totalCharge,

@@ -3113,16 +3113,17 @@ function clearProgressTimers(overlay) {
 }
 
 function renderFinishModalProcessing(overlay, message) {
-  // Параллельный pipeline на бэке (Promise.all): mass-status, NACH, БД-summary
-  // запускаются одновременно — общий TTL ~5-10 сек. Чек-лист показывает,
-  // какой этап «активен» сейчас, чтобы юзер видел движение, а не один
-  // безликий спиннер на 30 секунд.
+  // Pipeline на бэке: parallel(КОРОБЫ + НАЧ + readState) → ОТГ → БД ПОДБОРЫ →
+  // archive. Общий TTL обычно 5-10 сек, до 30 сек на лимитах квоты Sheets
+  // (ретраи 1s/2s/4s/8s). Чек-лист показывает «активный» этап чтобы юзер
+  // видел движение, а не один безликий спиннер.
   const steps = [
     { delay: 0,    text: '🔍 Проверка состояния заявки…' },
     { delay: 1500, text: '📦 Перевод коробов В СБОРКЕ → СОБРАНО (лист 🍬 КОРОБЫ)' },
     { delay: 3000, text: '💰 Запись начислений (лист НАЧ)' },
-    { delay: 5000, text: '📑 Финализация в ПОДБОРЫ.БД' },
-    { delay: 7500, text: '⏳ Дожидаемся подтверждения от Sheets…' },
+    { delay: 5000, text: '🚚 Запись в лист 🚚 ОТГ (UPSELLER)' },
+    { delay: 7000, text: '📑 Финализация в ПОДБОРЫ.БД' },
+    { delay: 9000, text: '⏳ Дожидаемся подтверждения от Sheets…' },
   ];
   const stepsHtml = steps.map((s, i) =>
     `<li class="pm-step pm-step-pending" data-idx="${i}">

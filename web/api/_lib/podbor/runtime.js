@@ -607,10 +607,13 @@ export async function applyPodborAtom(atom, ctx) {
         //      перезапись теми же значениями.
         //   1. mass transition В СБОРКЕ → СОБРАНО на листе КОРОБЫ.
         //   2. append строк начислений в лист НАЧ (из event-store).
-        //   3. writeFinishSummary (БД row U,V + W:AJ summary one-batch).
-        //   4. archive state-файла в _done/.
-        // Если любой шаг упал — state-файл и КОРОБЫ остаются в текущем виде,
-        // повторный finish дочистит пайплайн.
+        //   3. writeOtgSummary в UPSELLER → 🚚 ОТГ (O,P,Q,R,S,T,BC).
+        //   4. writeFinishSummary в ПОДБОРЫ → БД (U,V,O,W:AJ) — финал.
+        //   5. archive state-файла в _done/.
+        // Порядок: ОТГ ДО БД ПОДБОРЫ. БД-подборы — финальная отметка СОБРАНО,
+        // пишется последней. Если ОТГ упал — БД не пишем, archive не делаем,
+        // повторный finish дочистит. Все шаги идемпотентны (см. комменты в writers).
+        // На каждом Sheets-вызове встроен retry на 429/QUOTA (sheets-retry.js).
 
         // === STEP 0: pre-flight ===
         logEvent('info', 'finish', `${tag} STEP=preflight START (mode=full, by=${ctx.user || '-'})`, { traceId, zayavkaNumber });
@@ -670,38 +673,50 @@ export async function applyPodborAtom(atom, ctx) {
           return { ok: false, type: atom.type, mode: 'full', step: e.step || 'parallel', error: e.message, traceId };
         }
 
-        // === STEP 4: writeFinishSummary (после parallel — нужен transitioned/nachWritten) ===
+        // === Подготовка summary (in-memory, без Sheets-запросов) ===
         const summary = buildFinishSummary(finalState, {
           transitioned: t.transitioned,
           nachWritten: nachRes.written,
           scriptStartedAt,
         });
-        const t3 = Date.now();
+
+        // === STEP 4: writeOtgSummary (UPSELLER.🚚 ОТГ — проброс в главную таблицу) ===
+        // ОТГ ДО БД-ПОДБОРЫ (по бизнес-правилу: БД-подборы — финал, ставится
+        // последней). ОТГ обязателен: если упало — БД не пишем, archive не делаем.
+        // Идемпотентна: повторный finish перезапишет O,P,Q,R,S,T,BC теми же
+        // значениями. retry на 429 встроен в writer (см. sheets-retry.js).
+        const t4 = Date.now();
+        let otg;
+        try {
+          otg = await writeOtgSummary(zayavkaNumber, summary);
+          if (otg.ok) {
+            logEvent('info', 'finish', `${tag} STEP=otg OK row=${otg.row} (${Date.now() - t4}ms)`, { traceId });
+          } else {
+            // not_found: строки на ОТГ нет (менеджер не завёл заявку) — fail-fast,
+            // не пишем БД, не архивируем. Пользователь увидит понятную ошибку
+            // и попросит менеджера завести заявку на ОТГ.
+            logEvent('error', 'finish', `${tag} STEP=otg FAIL reason=${otg.reason}: ${otg.error}`, { traceId });
+            return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: otg.error, reason: otg.reason, traceId };
+          }
+        } catch (e) {
+          logEvent('error', 'finish', `${tag} STEP=otg FAIL: ${e.message}`, { traceId, error: e.message });
+          console.error(`${tag} otg stack:`, e.stack);
+          return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: e.message, traceId };
+        }
+
+        // === STEP 5: writeFinishSummary (БД ПОДБОРЫ — финальная отметка СОБРАНО) ===
+        // Делается ПОСЛЕДНЕЙ из Sheets-операций: U/V становятся 'СОБРАНО'+ts
+        // одной batch-записью с W:AJ. После успеха фронт по readZayavkaStatus
+        // увидит СОБРАНО и заблокирует UI. Все предыдущие шаги уже идемпотентны.
+        const t5 = Date.now();
         let r;
         try {
           r = await writeFinishSummary(zayavkaNumber, summary);
-          logEvent('info', 'finish', `${tag} STEP=summary OK ok=${r.ok} reason=${r.reason || '-'} (${Date.now() - t3}ms)`, { traceId });
+          logEvent('info', 'finish', `${tag} STEP=summary OK ok=${r.ok} reason=${r.reason || '-'} (${Date.now() - t5}ms)`, { traceId });
         } catch (e) {
           logEvent('error', 'finish', `${tag} STEP=summary FAIL: ${e.message}`, { traceId, error: e.message });
           console.error(`${tag} summary stack:`, e.stack);
           return { ok: false, type: atom.type, mode: 'full', step: 'summary', error: e.message, traceId };
-        }
-
-        // === STEP 5: writeOtgSummary (UPSELLER.🚚 ОТГ — проброс в главную таблицу) ===
-        // Soft-fail: запись в ОТГ — вторичный проброс. Если строки нет или
-        // запись упала — финиш заявки НЕ блокируем (БД ПОДБОРЫ — primary).
-        // Идемпотентна: повторный finish перезапишет теми же значениями.
-        const t5 = Date.now();
-        try {
-          const otg = await writeOtgSummary(zayavkaNumber, summary);
-          if (otg.ok) {
-            logEvent('info', 'finish', `${tag} STEP=otg OK row=${otg.row} (${Date.now() - t5}ms)`, { traceId });
-          } else {
-            logEvent('warn', 'finish', `${tag} STEP=otg SKIP reason=${otg.reason} (${Date.now() - t5}ms)`, { traceId });
-          }
-        } catch (e) {
-          logEvent('warn', 'finish', `${tag} STEP=otg FAIL (non-fatal): ${e.message}`, { traceId, error: e.message });
-          console.error(`${tag} otg stack:`, e.stack);
         }
 
         // === STEP 6: archive (только при полном успехе summary) ===

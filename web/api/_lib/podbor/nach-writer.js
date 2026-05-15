@@ -15,6 +15,7 @@ import { getSheets } from '../google.js';
 import { getNachislenyaSpreadsheetId } from './spreadsheet-id.js';
 import { readState } from './zayavka-store.js';
 import { logEvent } from './sync-log.js';
+import { withRetry } from './sheets-retry.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function todayDDMMYY() {
@@ -40,11 +41,11 @@ export async function writeNachToSheet(zayavkaId) {
   // двойную выплату. Лист НАЧ append-only, удалить дубль автоматически нельзя.
   const sheetsCli = getSheets();
   const spreadsheetId = getNachislenyaSpreadsheetId();
-  const existing = await sheetsCli.spreadsheets.values.get({
+  const existing = await withRetry(() => sheetsCli.spreadsheets.values.get({
     spreadsheetId,
     range: "'НАЧ'!C:C",
     valueRenderOption: 'UNFORMATTED_VALUE',
-  });
+  }), { label: `nach.read(${zayavkaId})` });
   const existingRows = (existing.data.values || []).filter(r => String(r[0] || '').trim() === zayavkaId);
   if (existingRows.length > 0) {
     logEvent('warn', 'sheet', `НАЧ: ${zayavkaId} уже записан (${existingRows.length} строк) — пропускаем дубль`, null);
@@ -78,13 +79,13 @@ export async function writeNachToSheet(zayavkaId) {
       sku, qty, price, barcode, '', charge, '', mp, '',
     ]);
   }
-  await sheetsCli.spreadsheets.values.append({
+  await withRetry(() => sheetsCli.spreadsheets.values.append({
     spreadsheetId,
     range: "'НАЧ'!A:O",
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
-  });
+  }), { label: `nach.append(${zayavkaId})` });
   logEvent('info', 'sheet', `НАЧ: записано ${rows.length} строк (заявка ${zayavkaId}, итого ${nach.totalCharge}₽)`, {
     zayavkaId, written: rows.length, charge: nach.totalCharge, paidUnits: nach.totalPaidUnits,
   });

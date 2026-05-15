@@ -21,6 +21,7 @@
 //   но на проде нагружает Sheets API и квоты сервис-аккаунта.
 
 import { getSheets } from '../google.js';
+import { withRetry } from './sheets-retry.js';
 import { KorobyIndex, COL, colLetter, buildShipBoxRow, buildSkladString, buildOwnerComment, RANGES } from './koroby-index.js';
 import { readQueue, writeQueue, deleteQueue, listActiveZayavki } from './storage.js';
 import { logEvent } from './sync-log.js';
@@ -675,7 +676,7 @@ function checkExpected(expected, getEntry) {
 async function appendKorobyRows(spreadsheetId, rows) {
   if (!rows.length) return;
   const sheets = getSheets();
-  await sheets.spreadsheets.values.append({
+  await withRetry(() => sheets.spreadsheets.values.append({
     spreadsheetId,
     range: RANGES.DATA,
     // USER_ENTERED — Sheets auto-detect: "20.05.26" → дата (serial), числа → числа,
@@ -684,19 +685,19 @@ async function appendKorobyRows(spreadsheetId, rows) {
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: rows },
-  });
+  }), { label: `koroby.append(${rows.length})` });
 }
 
 async function batchUpdateValues(spreadsheetId, updates) {
   if (!updates.length) return;
   const sheets = getSheets();
-  await sheets.spreadsheets.values.batchUpdate({
+  await withRetry(() => sheets.spreadsheets.values.batchUpdate({
     spreadsheetId,
     requestBody: {
       valueInputOption: 'USER_ENTERED',
       data: updates,
     },
-  });
+  }), { label: `koroby.batchUpdate(${updates.length})` });
 }
 
 // === Tick scheduler ===
