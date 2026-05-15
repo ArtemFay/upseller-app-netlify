@@ -13,10 +13,11 @@
 //   R = КОЛ СКЮ                           — собранных уникальных SKU
 //   S = КОЛ КОР ФФ                        — коробов с owner='ФФ' (фулфилмент)
 //   T = ЛОГ ЗАЯВКИ                        — picklog: barcode⁠ - ⁠need⁠ - ⁠picked
+//   BC = СТАТУС                           — 'СОБРАНО' при finish (как в БД ПОДБОРЫ.U)
 //
-// Идемпотентность: одной batchUpdate перезаписываем O,P,Q,R,S,T теми же
+// Идемпотентность: одной batchUpdate перезаписываем O,P,Q,R,S,T,BC теми же
 // значениями при повторном finish — safe, числа стабильны (computed.* derived
-// из event-store), список коробов и picklog тоже воспроизводимы.
+// из event-store), список коробов и picklog тоже воспроизводимы, статус const.
 
 import { getSheets } from '../google.js';
 import { getKorobySpreadsheetId } from './spreadsheet-id.js';
@@ -62,6 +63,7 @@ export async function writeOtgSummary(zayavkaNumber, summary) {
     R: summary.uniqueSku,           // КОЛ СКЮ — уникальных SKU собрано
     S: summary.ffBoxCount,          // КОЛ КОР ФФ — фулфилмент-коробов
     T: summary.picklog,             // ЛОГ ЗАЯВКИ — 3-колоночный текст
+    BC: 'СОБРАНО',                  // СТАТУС — финальный статус заявки на ОТГ
   };
   const data = [];
   for (const [col, value] of Object.entries(fields)) {
@@ -71,7 +73,7 @@ export async function writeOtgSummary(zayavkaNumber, summary) {
     spreadsheetId: id,
     requestBody: { valueInputOption: 'USER_ENTERED', data },
   });
-  logEvent('info', 'sheet', `ОТГ: ${zayavkaNumber} summary записан в O,P,Q,R,S,T (row ${row})`, {
+  logEvent('info', 'sheet', `ОТГ: ${zayavkaNumber} summary записан в O,P,Q,R,S,T,BC=СОБРАНО (row ${row})`, {
     row, totalUnits: summary.totalUnits, shipBoxCount: summary.shipBoxCount,
     uniqueSku: summary.uniqueSku, ffBoxCount: summary.ffBoxCount,
   });
