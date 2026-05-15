@@ -634,6 +634,16 @@ async function startZayavka(z) {
   state.activeZayavka = z;
   state.requestByBar5 = buildRequestByBar5(z.items);
   state.requestByBarcode = buildRequestByBarcode(z.items);
+  // Сброс per-zayavka состояния, которое могло остаться от предыдущей.
+  // zayavkaLocked раньше сбрасывался только в backToStart — если пользователь
+  // открывал новую заявку напрямую (без возврата к списку), модалка «Заявка
+  // завершена» от предыдущей оставалась поверх новой.
+  state.zayavkaLocked = false;
+  state.boxLayouts = {};
+  state.committedPicked = {};
+  state.rowSync = {};
+  const oldBanner = document.getElementById('zayavkaLockedBanner');
+  if (oldBanner) oldBanner.classList.add('hidden');
   switchView('polotno');
   $('canvas').innerHTML = '<div class="placeholder">Загрузка коробов клиента…</div>';
   renderZayavkaBar();
@@ -1262,9 +1272,13 @@ let _statePollTimer = null;
 async function pollSyncState() {
   const z = state.activeZayavka;
   if (!z) return;
+  const requestedFor = z.number;
   try {
-    const r = await fetch('/api/podbor/state?zayavkaId=' + encodeURIComponent(z.number));
+    const r = await fetch('/api/podbor/state?zayavkaId=' + encodeURIComponent(requestedFor));
     if (!r.ok) return;
+    // Защита от race: пока запрос летел, пользователь мог уйти на другую
+    // заявку. Не применяем ответ к НЕ той заявке.
+    if (!state.activeZayavka || state.activeZayavka.number !== requestedFor) return;
     const data = await r.json();
     const pendingByKorob = new Set();
     for (const op of (data.pendingOps || [])) {
