@@ -81,6 +81,25 @@ export async function forwardRefresh() {
 
 export function getCachedSnapshot() { return _snapshot; }
 
+// === Per-zayavka mutex для queue-операций ===
+// Без него быстрые подряд addOp от одного пользователя теряли ops:
+// поток A читает queue → [], push opA → write [opA]
+// поток B читает queue → [] (одновременно), push opB → write [opB] — opA потерян.
+// Реальный инцидент 2026-05-15 (S1607-Чубин): full_to_ship для П5143-055 и
+// П5143-065 не дошёл до Sheets — ops пропадали из очереди при race с другими
+// addOp. На листе короба остались с П-префиксом, S-коробы не созданы.
+//
+// Применяется к: addOp (read+modify+write) и финальной части flush'а
+// (где queue.ops.filter удаляет applied/conflicted).
+const _queueMutexChains = new Map(); // zayavkaId → Promise
+
+export function withQueueLock(zayavkaId, fn) {
+  const prev = _queueMutexChains.get(zayavkaId) || Promise.resolve();
+  const next = prev.then(() => Promise.resolve().then(fn));
+  _queueMutexChains.set(zayavkaId, next.catch(() => {}));
+  return next;
+}
+
 // === Добавление атома в очередь ===
 //
 // Атомы внутреннего формата:
@@ -100,56 +119,59 @@ export function getCachedSnapshot() { return _snapshot; }
 export async function addOp(zayavkaId, op) {
   if (!zayavkaId) throw new Error('addOp: zayavkaId обязателен');
   if (!op?.type) throw new Error('addOp: op.type обязателен');
-  const queue = await readQueue(zayavkaId);
+  // ВЕСЬ read-modify-write под per-zayavka mutex — иначе быстрые подряд ops
+  // от одного пользователя теряются (см. инцидент S1607-Чубин 2026-05-15:
+  // full_to_ship для П5143-055 и -065 пропали из очереди → не доехали до Sheets).
+  return withQueueLock(zayavkaId, async () => {
+    const queue = await readQueue(zayavkaId);
 
-  const fullOp = {
-    id: op.id || randomUUID(),
-    type: op.type,
-    ts: Date.now(),
-    user: op.user || 'unknown',
-    zayavkaId,
-    payload: op.payload || {},
-    expected: Array.isArray(op.expected) ? op.expected : [],
-  };
+    const fullOp = {
+      id: op.id || randomUUID(),
+      type: op.type,
+      ts: Date.now(),
+      user: op.user || 'unknown',
+      zayavkaId,
+      payload: op.payload || {},
+      expected: Array.isArray(op.expected) ? op.expected : [],
+    };
 
-  if (op.type === 'set_layout') {
-    const src = fullOp.payload.source_korob;
-    if (src) {
-      const idx = queue.ops.findIndex(o => o.type === 'set_layout' && o.payload?.source_korob === src);
-      if (idx >= 0) {
-        queue.ops.splice(idx, 1);
-        logEvent('info', 'queue', `set_layout заменил предыдущий unflushed для ${src}`, { zayavkaId });
+    if (op.type === 'set_layout') {
+      const src = fullOp.payload.source_korob;
+      if (src) {
+        const idx = queue.ops.findIndex(o => o.type === 'set_layout' && o.payload?.source_korob === src);
+        if (idx >= 0) {
+          queue.ops.splice(idx, 1);
+          logEvent('info', 'queue', `set_layout заменил предыдущий unflushed для ${src}`, { zayavkaId });
+        }
       }
+    } else if (op.type === 'ship_create') {
+      if (!queue.shipBoxes) queue.shipBoxes = [];
+      queue.shipBoxes.push({
+        number: fullOp.payload.number,
+        taraType: fullOp.payload.taraType,
+        dimensions: fullOp.payload.dimensions || null,
+        owner: fullOp.payload.owner || null,
+        createdAt: fullOp.ts,
+      });
+      await writeQueue(zayavkaId, queue);
+      logEvent('info', 'queue', `ship_create виртуально: ${fullOp.payload.number}`, { zayavkaId: shortZayavkaId(zayavkaId), user: fullOp.user });
+      return { ok: true, op: fullOp, virtual: true };
+    } else if (op.type === 'ship_delete') {
+      if (queue.shipBoxes) {
+        queue.shipBoxes = queue.shipBoxes.filter(b => b.number !== fullOp.payload.number);
+      }
+      await writeQueue(zayavkaId, queue);
+      logEvent('info', 'queue', `ship_delete виртуально: ${fullOp.payload.number}`, { zayavkaId });
+      return { ok: true, op: fullOp, virtual: true };
     }
-  } else if (op.type === 'ship_create') {
-    if (!queue.shipBoxes) queue.shipBoxes = [];
-    // Сохраняем все meta (taraType, dimensions, owner) — нужны при materialization
-    // строки в КОРОБЫ для R (комментарий с КЛ/ФФ) и C (тара коэф).
-    queue.shipBoxes.push({
-      number: fullOp.payload.number,
-      taraType: fullOp.payload.taraType,
-      dimensions: fullOp.payload.dimensions || null,
-      owner: fullOp.payload.owner || null,
-      createdAt: fullOp.ts,
-    });
-    await writeQueue(zayavkaId, queue);
-    logEvent('info', 'queue', `ship_create виртуально: ${fullOp.payload.number}`, { zayavkaId: shortZayavkaId(zayavkaId), user: fullOp.user });
-    return { ok: true, op: fullOp, virtual: true };
-  } else if (op.type === 'ship_delete') {
-    if (queue.shipBoxes) {
-      queue.shipBoxes = queue.shipBoxes.filter(b => b.number !== fullOp.payload.number);
-    }
-    await writeQueue(zayavkaId, queue);
-    logEvent('info', 'queue', `ship_delete виртуально: ${fullOp.payload.number}`, { zayavkaId });
-    return { ok: true, op: fullOp, virtual: true };
-  }
 
-  queue.ops.push(fullOp);
-  await writeQueue(zayavkaId, queue);
-  logEvent('info', 'queue', `op queued: ${op.type}`, {
-    zayavkaId: shortZayavkaId(zayavkaId), user: fullOp.user, payload: fullOp.payload,
+    queue.ops.push(fullOp);
+    await writeQueue(zayavkaId, queue);
+    logEvent('info', 'queue', `op queued: ${op.type}`, {
+      zayavkaId: shortZayavkaId(zayavkaId), user: fullOp.user, payload: fullOp.payload,
+    });
+    return { ok: true, op: fullOp };
   });
-  return { ok: true, op: fullOp };
 }
 
 // === Flush одной заявки ===
@@ -233,25 +255,29 @@ async function _flushUnderLock(zayavkaId, reason) {
 
   const appliedIds = new Set(result.applied || []);
   const conflictedIds = new Set(result.conflicts.map(c => c.opId));
-  // Удаляем И applied, И conflicted из очереди. Иначе conflicted retried
-  // бесконечно (frontend получает toast на каждый poll). Пользователь
-  // получит уведомление об ошибке один раз через lastFlushResult.conflicts;
-  // фронт сделает rollback через reload полотна.
-  queue.ops = queue.ops.filter(o => !appliedIds.has(o.id) && !conflictedIds.has(o.id));
-  queue.lastFlushAt = Date.now();
-  queue.lastFlushResult = {
-    ok: conflictedIds.size === 0,
-    reason,
-    processed: result.applied.length,
-    conflicts: result.conflicts,
-    appended: result.appendRows.length,
-    updated: result.updates.length,
-    durationMs: Date.now() - tStart,
-  };
-  await writeQueue(zayavkaId, queue);
-  logEvent('info', 'flush', `done (${reason}): applied=${result.applied.length} conflicts=${result.conflicts.length} append=${result.appendRows.length} update=${result.updates.length} ${queue.lastFlushResult.durationMs}ms`, { zayavkaId: shortId });
+  // Финальный update queue под mutex: между read (выше) и сейчас могли
+  // прийти новые addOp (race в выборе reread'а — иначе мы бы перезаписали
+  // queue и потеряли вновь добавленные ops). Перечитываем СВЕЖУЮ queue,
+  // удаляем applied/conflicted ids — новые ops остаются для следующего тика.
+  const flushResult = await withQueueLock(zayavkaId, async () => {
+    const fresh = await readQueue(zayavkaId);
+    fresh.ops = (fresh.ops || []).filter(o => !appliedIds.has(o.id) && !conflictedIds.has(o.id));
+    fresh.lastFlushAt = Date.now();
+    fresh.lastFlushResult = {
+      ok: conflictedIds.size === 0,
+      reason,
+      processed: result.applied.length,
+      conflicts: result.conflicts,
+      appended: result.appendRows.length,
+      updated: result.updates.length,
+      durationMs: Date.now() - tStart,
+    };
+    await writeQueue(zayavkaId, fresh);
+    return fresh.lastFlushResult;
+  });
+  logEvent('info', 'flush', `done (${reason}): applied=${result.applied.length} conflicts=${result.conflicts.length} append=${result.appendRows.length} update=${result.updates.length} ${flushResult.durationMs}ms`, { zayavkaId: shortId });
 
-  return queue.lastFlushResult;
+  return flushResult;
 }
 
 // === Проекция атомов на snapshot ===
