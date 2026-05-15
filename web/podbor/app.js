@@ -1310,44 +1310,67 @@ async function pollSyncState() {
         const logBtn = $('btnPicklog');
         if (logBtn) logBtn.innerHTML = `📋 ЛОГ · ${newSummary.eventsCount}`;
       }
-      // Multi-tablet sync: committedPicked = max(initial-load-baseline, event-store).
-      // ВАЖНО: event-store покрывает только события ЭТОЙ JSON-эры; sheet-baseline
-      // (из /api/podbor/load) может содержать историческое значение больше. Поэтому
-      // merge через max — никогда не уменьшаем, только растим.
+      // Multi-tablet sync: event-store — авторитетный источник pickedByBarcode.
+      // До 2026-05-15 был max-merge ("никогда не уменьшаем") как защита от
+      // sheet-baseline > event-store на старте. Это ломало обратное движение:
+      // если подборщик переложил товар из ship-короба обратно в ячейку (через
+      // редактирование исходника с kolPodb меньше прежнего), бэк правильно
+      // снижал picked, а фронт игнорировал и показывал старое значение.
       //
-      // АБСОРБЦИЯ: когда committed вырос на Δ для баркода, вычитаем Δ из локального
-      // boxLayouts[*][bar].kolPodb. Это убирает dual-count в pickedByBar5
-      // (committed + boxLayouts) — иначе свежий pick считается дважды до тех пор
-      // пока юзер не перезайдёт в заявку.
+      // Теперь: committed = evPicked (1:1). Изменения:
+      //   delta > 0 (committed вырос) → absorbtion: вычитаем Δ из локального
+      //     boxLayouts чтобы убрать dual-count.
+      //   delta < 0 (committed уменьшился) → drafts по этому bar уже учтены
+      //     в новом committed; обнуляем kolPodb в локальных boxLayouts
+      //     по этому bar чтобы не считать дважды.
+      //   bar исчез из evPicked (был, нет) → ставим committed=0, тоже clear.
       const evPicked = data.eventStore.pickedByBarcode || {};
       const oldPicked = state.committedPicked || {};
       const merged = { ...oldPicked };
-      const deltas = {}; // bar → сколько прибавилось к committed
+      const deltas = {}; // bar → q - cur (может быть отрицательной)
       for (const [bar, qty] of Object.entries(evPicked)) {
         const q = Number(qty) || 0;
         const cur = Number(merged[bar]) || 0;
-        if (q > cur) {
+        if (q !== cur) {
           deltas[bar] = q - cur;
           merged[bar] = q;
           pickedChanged = true;
         }
       }
+      // Баркоды которые были в committed но исчезли из evPicked — обнуляем.
+      for (const bar of Object.keys(oldPicked)) {
+        if (!(bar in evPicked) && Number(oldPicked[bar]) > 0) {
+          deltas[bar] = -Number(oldPicked[bar]);
+          merged[bar] = 0;
+          pickedChanged = true;
+        }
+      }
       if (pickedChanged) {
         state.committedPicked = merged;
-        // Absorbtion: для каждого баркода с delta>0 пройти по boxLayouts и
-        // обнулить локальные kolPodb до полного покрытия delta. Локальный
-        // draft, который уже улетел в event-store, не должен считаться повторно.
-        for (const [bar, delta0] of Object.entries(deltas)) {
-          let remaining = delta0;
-          for (const [boxId, layout] of Object.entries(state.boxLayouts || {})) {
-            if (remaining <= 0) break;
-            const slot = layout && layout[bar];
-            if (!slot) continue;
-            const podb = Number(slot.kolPodb) || 0;
-            if (podb <= 0) continue;
-            const consume = Math.min(podb, remaining);
-            slot.kolPodb = podb - consume;
-            remaining -= consume;
+        for (const [bar, delta] of Object.entries(deltas)) {
+          if (delta > 0) {
+            // Increase-absorbtion: вычитаем Δ из локальных drafts.
+            let remaining = delta;
+            for (const layout of Object.values(state.boxLayouts || {})) {
+              if (remaining <= 0) break;
+              const slot = layout && layout[bar];
+              if (!slot) continue;
+              const podb = Number(slot.kolPodb) || 0;
+              if (podb <= 0) continue;
+              const consume = Math.min(podb, remaining);
+              slot.kolPodb = podb - consume;
+              remaining -= consume;
+            }
+          } else if (delta < 0) {
+            // Decrease-absorbtion: drafts по этому bar уже отражены в новом
+            // committed (или должны быть «забыты»). Сбрасываем kolPodb во
+            // всех boxLayouts по этому bar, чтобы pickedByBarcode не делал
+            // dual-count (committed + локальный draft).
+            for (const layout of Object.values(state.boxLayouts || {})) {
+              const slot = layout && layout[bar];
+              if (!slot) continue;
+              if ((Number(slot.kolPodb) || 0) > 0) slot.kolPodb = 0;
+            }
           }
         }
       }
