@@ -6,6 +6,7 @@ import { appendEvent, updateMeta } from './events.js';
 import { loadActiveZayavki } from './zayavki.js';
 import { writeNachToSheet } from './nach-writer.js';
 import { buildFinishSummary, writeFinishSummary, findRowByZayavkaNumber } from './bd-summary-writer.js';
+import { writeOtgSummary, findRowOnOtg } from './otg-summary-writer.js';
 import { readState, archive, transact } from './zayavka-store.js';
 import { getKorobySpreadsheetId, getPodborySpreadsheetId, getNachislenyaSpreadsheetId } from './spreadsheet-id.js';
 import { logEvent } from './sync-log.js';
@@ -686,7 +687,24 @@ export async function applyPodborAtom(atom, ctx) {
           return { ok: false, type: atom.type, mode: 'full', step: 'summary', error: e.message, traceId };
         }
 
-        // === STEP 5: archive (только при полном успехе summary) ===
+        // === STEP 5: writeOtgSummary (UPSELLER.🚚 ОТГ — проброс в главную таблицу) ===
+        // Soft-fail: запись в ОТГ — вторичный проброс. Если строки нет или
+        // запись упала — финиш заявки НЕ блокируем (БД ПОДБОРЫ — primary).
+        // Идемпотентна: повторный finish перезапишет теми же значениями.
+        const t5 = Date.now();
+        try {
+          const otg = await writeOtgSummary(zayavkaNumber, summary);
+          if (otg.ok) {
+            logEvent('info', 'finish', `${tag} STEP=otg OK row=${otg.row} (${Date.now() - t5}ms)`, { traceId });
+          } else {
+            logEvent('warn', 'finish', `${tag} STEP=otg SKIP reason=${otg.reason} (${Date.now() - t5}ms)`, { traceId });
+          }
+        } catch (e) {
+          logEvent('warn', 'finish', `${tag} STEP=otg FAIL (non-fatal): ${e.message}`, { traceId, error: e.message });
+          console.error(`${tag} otg stack:`, e.stack);
+        }
+
+        // === STEP 6: archive (только при полном успехе summary) ===
         if (r.ok) {
           try {
             if (finalState) await archive(zayavkaNumber, finalState);

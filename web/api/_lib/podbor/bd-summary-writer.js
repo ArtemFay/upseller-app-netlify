@@ -1,8 +1,10 @@
-// Запись сводной информации о заявке в лист БД, колонки W:AJ.
+// Запись сводной информации о заявке в лист БД, колонки O + W:AJ.
 //
 // Вызывается при zayavka.finish mode='full' ОДИН раз после всех успешных
 // записей (КОРОБЫ → СОБРАНО, НАЧ append, state archive). Заменяет вторую
-// часть markFinished — теперь одной batch-записью обновляются U, V и W:AJ.
+// часть markFinished — теперь одной batch-записью обновляются U, V, O и W:AJ.
+//
+// Колонка O = ЛОГ ЗАЯВКИ (3-столбчатый текст picklog, см. picklog в summary).
 //
 // Структура BD заявки (см. bd-writer.js для A:V и комментарий ниже):
 //   W=СОБР СКЮ — кол. уникальных собранных баркодов (picked > 0)
@@ -24,6 +26,7 @@
 import { getSheets } from '../google.js';
 import { getPodborySpreadsheetId } from './spreadsheet-id.js';
 import { logEvent } from './sync-log.js';
+import { buildZayavkaLog } from './zayavka-log.js';
 
 const SHEET_NAME = 'БД';
 
@@ -120,6 +123,36 @@ export function buildFinishSummary(state, ctx = {}) {
   }
   const shipBoxListStr = shipBoxList.map(r => r.join(' | ')).join('\n');
 
+  // ЛОГ ЗАЯВКИ — 3-колоночный текст (см. zayavka-log.js).
+  // Используется в БД.O и ОТГ.T одновременно — общий формат, общий билдер.
+  const picklog = buildZayavkaLog(state);
+
+  // === Список коробов для ОТГ.O — только номера, по одному в строке ===
+  // На листе ОТГ нужна упрощённая версия (без owner/dims/qty), пример:
+  //   S1610-001
+  //   S3317-038
+  //   S4560-165
+  // shipBoxNumbers: уникальные номера в том же порядке, что в shipBoxList.
+  const seenBoxNumbers = new Set();
+  const shipBoxNumbers = [];
+  for (const r of shipBoxList) {
+    if (!seenBoxNumbers.has(r[0])) {
+      seenBoxNumbers.add(r[0]);
+      shipBoxNumbers.push(r[0]);
+    }
+  }
+  const shipBoxNumbersStr = shipBoxNumbers.join('\n');
+
+  // === КОЛ КОР ФФ — коробов с owner='ФФ' (фулфилмент) ===
+  // shipBoxList: [number, owner, dims, qty]. Считаем уникальные номера, чьи
+  // owner === 'ФФ'. Дефолт owner='ФФ' стоит выше при пустом — это совпадает
+  // с историческим поведением: если короб не маркирован — он фулфилмента.
+  const ffBoxNumbers = new Set();
+  for (const r of shipBoxList) {
+    if (String(r[1] || 'ФФ') === 'ФФ') ffBoxNumbers.add(r[0]);
+  }
+  const ffBoxCount = ffBoxNumbers.size;
+
   // ЛОГ ВЫПОЛН — человекочитаемый таймлайн.
   const execLog = (state.events || []).map(ev => {
     const t = fmtDateTime(ev.ts).slice(-5); // HH:MM
@@ -176,6 +209,9 @@ export function buildFinishSummary(state, ctx = {}) {
     uniqueSku, totalUnits, freeUnits, paidUnits, toCellUnits,
     shipBoxCount: shipBoxList.length,
     shipBoxListStr,
+    shipBoxNumbersStr,   // для ОТГ.O — только номера через \n
+    ffBoxCount,          // для ОТГ.S — кол-во ФФ-коробов
+    picklog,             // для БД.O и ОТГ.T — 3-колоночный текст (barcode/need/picked)
     totalCharge: nach.totalCharge || 0,
     execLog,
     changesReport,
@@ -204,6 +240,7 @@ export async function writeFinishSummary(zayavkaNumber, summary) {
   const d = new Date();
   const ts = `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${String(d.getFullYear()).slice(-2)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const fields = {
+    O: summary.picklog,  // ЛОГ ЗАЯВКИ: barcode⁠ - ⁠need⁠ - ⁠picked через \n
     U: 'СОБРАНО', V: ts,
     W: summary.uniqueSku, X: summary.totalUnits,
     Y: summary.freeUnits, Z: summary.paidUnits, AA: summary.toCellUnits,
