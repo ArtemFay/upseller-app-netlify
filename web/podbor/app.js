@@ -653,6 +653,7 @@ async function startZayavka(z) {
     state.availability = data.availability || {};
     state.committedPicked = data.pickedByBarcode || {};
     state.shipRowsByBox = data.shipRows || {}; // { korobNumber → [rows] } для миксования
+    ensureRequestedGroupsExist();
     state.visibleGroups = state.allGroups.filter(g => (state.requestByBar5[g.bar5] || 0) > 0);
     state.shipBoxes = shipData.boxes || [];
 
@@ -812,6 +813,33 @@ function paginateGroups(groups) {
   return groups.map(g => ({ groups: [g], rowsCount: g.rows.length }));
 }
 
+// Виртуальные группы для баркодов из заявки, у которых на листе КОРОБЫ
+// уже нет источников (всё взято в S-коробы или физически закончилось).
+// Без них карточка баркода исчезает с UI после полного изъятия — оператор
+// перестаёт видеть прогресс / ship-коробы по этому баркоду.
+function ensureRequestedGroupsExist() {
+  if (!state.requestByBar5) return;
+  const existing = new Set((state.allGroups || []).map(g => g.bar5));
+  // SKU и полный баркод подтянем из request.items, чтобы summary показала
+  // те же данные, что и реальная группа (полный баркод + название товара).
+  const itemByBar5 = {};
+  for (const it of (state.activeZayavka?.items || [])) {
+    if (it.barcode) itemByBar5[String(it.barcode).slice(-5)] = it;
+  }
+  for (const [bar5, qty] of Object.entries(state.requestByBar5)) {
+    if (Number(qty) <= 0 || existing.has(bar5)) continue;
+    const it = itemByBar5[bar5] || {};
+    state.allGroups.push({
+      bar5,
+      color: '#e5e7eb', // серый — визуально отделяет «без источников» от реальных
+      rows: [],
+      _virtual: true,
+      _fullBarcode: it.barcode || bar5,
+      _sku: it.sku || '',
+    });
+  }
+}
+
 // Перестраивает visibleRowsFlat + _startIdx по текущему состоянию visibleGroups.
 // Вызывается при первой загрузке полотна И после live-инжекции виртуальных rows
 // (через poll-handler boxesView), чтобы renderCanvas корректно срезал rows
@@ -930,12 +958,13 @@ function renderCanvas(groups) {
     const available = availForGroup(g, state.availability);
     const picked = pickedByBar5(g.bar5);
     const stillNeeded = Math.max(0, Math.min(requested, available) - picked);
-    const fullBarcode = String((g.rows[0] && g.rows[0].barcode) || g.bar5 || '');
+    // Для виртуальной группы (баркод в заявке, но источников нет) полный
+    // баркод и SKU подтягиваем из request.items, иначе summary показала бы
+    // только последние 5 цифр без названия товара.
+    const fullBarcode = String((g.rows[0] && g.rows[0].barcode) || g._fullBarcode || g.bar5 || '');
     const tail = fullBarcode.slice(-5);
     const prefix = fullBarcode.length > 5 ? fullBarcode.slice(0, -5) : '';
-    // SKU баркода — берём из первой строки группы (skuByBarcode уже нормализован
-    // на бэке, см. boxes.js → один SKU для одного баркода во всех строках).
-    const groupSku = (g.rows[0] && g.rows[0].sku) || '';
+    const groupSku = (g.rows[0] && g.rows[0].sku) || g._sku || '';
     const counters = `
       <span class="grp-cnt zayav"><span class="grp-cnt-lbl">Заявка</span> <b>${requested}</b></span>
       <span class="grp-cnt avail${available < requested ? ' warn' : ''}${available === 0 ? ' bad' : ''}"><span class="grp-cnt-lbl">Доступно</span> <b>${available}</b></span>
@@ -953,6 +982,19 @@ function renderCanvas(groups) {
     // Ship-rows для этого баркода (только короба отгрузки содержащие этот bar).
     // Появляются СВЕРХУ таблицы группы, с разделителем перед источниками.
     const shipRowsHtml = buildShipBoxesRowsForBar(g.bar5);
+    // Для виртуальной/пустой группы (баркод в заявке, источников нет —
+    // например, все коробы изъяты целиком) показываем только summary +
+    // ship-rows + плашку, без таблицы источников.
+    if (g.rows.length === 0) {
+      const emptyMsg = shipRowsHtml
+        ? `<tr><td colspan="11" class="empty-source-note" style="padding: 12px; color: #6b7280; font-size: 13px; text-align: center;">Источников на складе больше нет — всё в коробах отгрузки выше.</td></tr>`
+        : `<tr><td colspan="11" class="empty-source-note" style="padding: 16px; color: #9ca3af; font-size: 13px; text-align: center;">Нет коробов с этим баркодом ни в источниках, ни в отгрузке.</td></tr>`;
+      const separator = shipRowsHtml
+        ? `<tr class="ship-source-divider"><td colspan="11"><span>↓ Источники изъятия</span></td></tr>`
+        : '';
+      html += summary + `<table class="boxes-table">${colgroup}${head}<tbody>${shipRowsHtml}${separator}${emptyMsg}</tbody></table>`;
+      return;
+    }
     const separator = shipRowsHtml
       ? `<tr class="ship-source-divider"><td colspan="11"><span>↓ Источники изъятия</span></td></tr>`
       : '';
@@ -1258,6 +1300,7 @@ async function pollSyncState() {
             state.allGroups = reloadData.groups || [];
             state.availability = reloadData.availability || {};
             state.shipRowsByBox = reloadData.shipRows || {};
+            ensureRequestedGroupsExist();
             state.allRowsFlat = [];
             state.allGroups.forEach(g => {
               g.rows.forEach(r => state.allRowsFlat.push({ ...r, bar5: g.bar5, color: g.color }));
