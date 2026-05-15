@@ -54,21 +54,31 @@ function fmtScriptDuration(ms) {
   return `${m}мин ${pad(s)}сек`;
 }
 
-// Найти строку заявки в БД (та же логика что bd-writer.findRowByZayavkaNumber).
-// Экспортируется для pre-flight проверки в runtime.js — поймать «нет строки в БД»
-// до записи КОРОБ/НАЧ, чтобы повторный finish не падал на середине пайплайна.
+// Найти строку заявки в БД + тип отгрузки (Q='ТИП ОТГ': ОТГ/ПЕР) одним read'ом.
+// Возвращает { row, tipOtg } или null если заявка не найдена.
+//
+// До 2026-05-15 читали только колонку F и тип определяли отдельно — это давало
+// 2 reads на одну заявку при finish (preflight + writeFinishSummary дублировали
+// поиск строки, плюс отдельный source для типа). Теперь — один range get F:Q,
+// row и tipOtg возвращаются вместе. preflight передаёт row в writeFinishSummary,
+// чтобы тот не делал лишний read. Экономит ~33% Read-quota на каждый finish.
 export async function findRowByZayavkaNumber(zayavkaNumber) {
   const sheets = getSheets();
   const id = getPodborySpreadsheetId();
   const r = await withRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: id,
-    range: `'${SHEET_NAME}'!F:F`,
+    range: `'${SHEET_NAME}'!F:Q`,
     valueRenderOption: 'UNFORMATTED_VALUE',
   }), { label: `bd.findRow(${zayavkaNumber})` });
   const values = r.data.values || [];
+  // F=col 0, Q=col 11 в выборке F:Q. tipOtg → колонка Q, индекс 11.
   for (let i = 0; i < values.length; i++) {
-    const v = String(values[i][0] || '').trim();
-    if (v === zayavkaNumber) return i + 1;
+    const v = String((values[i] && values[i][0]) || '').trim();
+    if (v === zayavkaNumber) {
+      const tipRaw = String((values[i] && values[i][11]) || '').trim().toUpperCase();
+      const tipOtg = (tipRaw === 'ПЕР' || tipRaw === 'PER') ? 'ПЕР' : 'ОТГ';
+      return { row: i + 1, tipOtg };
+    }
   }
   return null;
 }
@@ -226,8 +236,13 @@ export function buildFinishSummary(state, ctx = {}) {
 // === Writer ===
 
 // Пишет U,V (статус+ts) + W:AJ (summary) в одном batch'е. Заменяет markFinished.
-export async function writeFinishSummary(zayavkaNumber, summary) {
-  const row = await findRowByZayavkaNumber(zayavkaNumber);
+// opts.row — row из preflight (если уже найден). Без него — повторный read.
+export async function writeFinishSummary(zayavkaNumber, summary, opts = {}) {
+  let row = opts.row;
+  if (!row) {
+    const found = await findRowByZayavkaNumber(zayavkaNumber);
+    row = found && found.row;
+  }
   if (!row) {
     logEvent('warn', 'sheet', `БД: заявка ${zayavkaNumber} не найдена для записи finish-summary`, null);
     return {

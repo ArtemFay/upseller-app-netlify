@@ -229,6 +229,7 @@ async function loadZayavkaMeta(zayavkaId) {
       warehouse: z.warehouse,
       finalWarehouse: z.finalWarehouse,
       dateOtgr: z.dateOtgr,
+      type: z.type,  // ОТГ / ПЕР — нужно при finish для skip ОТГ-step при перемаркировке.
       requestItems: z.items.map(it => ({
         barcode: it.barcode,
         qty: it.qty,
@@ -616,6 +617,10 @@ export async function applyPodborAtom(atom, ctx) {
         // На каждом Sheets-вызове встроен retry на 429/QUOTA (sheets-retry.js).
 
         // === STEP 0: pre-flight ===
+        // Один Sheets-read на БД (F:Q — даёт row + tipOtg одновременно). Если
+        // tipOtg='ПЕР' (перемаркировка) — не ходим на ОТГ-лист совсем (заявка
+        // не фигурирует в отгрузках). state.meta.type как fallback для legacy
+        // state-файлов без свежей меты, но колонка Q в БД — источник правды.
         logEvent('info', 'finish', `${tag} STEP=preflight START (mode=full, by=${ctx.user || '-'})`, { traceId, zayavkaNumber });
         const preflight = {};
         try {
@@ -624,14 +629,24 @@ export async function applyPodborAtom(atom, ctx) {
           preflight.nachId = getNachislenyaSpreadsheetId();
           preflight.state = await readState(zayavkaNumber);
           if (!preflight.state) throw new Error(`state-файл не найден для ${zayavkaNumber} (zayavki/<id>.json)`);
-          preflight.bdRow = await findRowByZayavkaNumber(zayavkaNumber);
-          if (!preflight.bdRow) throw new Error(`заявка ${zayavkaNumber} не найдена в листе ПОДБОРЫ.БД (колонка F)`);
+          const bdFound = await findRowByZayavkaNumber(zayavkaNumber);
+          if (!bdFound) throw new Error(`заявка ${zayavkaNumber} не найдена в листе ПОДБОРЫ.БД (колонка F)`);
+          preflight.bdRow = bdFound.row;
+          preflight.tipOtg = bdFound.tipOtg;
+          // Skip ОТГ-step для перемаркировки. Если ПЕР — не ищем строку на ОТГ
+          // (её там нет), не делаем лишний read, не пытаемся писать.
+          preflight.skipOtg = (bdFound.tipOtg === 'ПЕР') || (preflight.state.meta && preflight.state.meta.type === 'ПЕР');
+          if (!preflight.skipOtg) {
+            const otgRow = await findRowOnOtg(zayavkaNumber);
+            if (!otgRow) throw new Error(`заявка ${zayavkaNumber} не найдена в листе UPSELLER.🚚 ОТГ (колонка L). Если это перемаркировка — отметьте в ПОДБОРЫ.БД колонке Q='ПЕР'.`);
+            preflight.otgRow = otgRow;
+          }
         } catch (e) {
           logEvent('error', 'finish', `${tag} STEP=preflight FAIL: ${e.message}`, { traceId, zayavkaNumber, error: e.message });
           console.error(`${tag} preflight stack:`, e.stack);
           return { ok: false, type: atom.type, mode: 'full', step: 'preflight', error: e.message, traceId };
         }
-        logEvent('info', 'finish', `${tag} STEP=preflight OK (bdRow=${preflight.bdRow}, state=loaded)`, { traceId });
+        logEvent('info', 'finish', `${tag} STEP=preflight OK (bdRow=${preflight.bdRow}, tipOtg=${preflight.tipOtg}, otgRow=${preflight.otgRow || 'skip'}, state=loaded)`, { traceId });
 
         // appendEvent ПОСЛЕ preflight: если pre-flight упал — не плодим дубли в event-store.
         await appendEvent(zayavkaNumber, {
@@ -680,38 +695,39 @@ export async function applyPodborAtom(atom, ctx) {
           scriptStartedAt,
         });
 
-        // === STEP 4: writeOtgSummary (UPSELLER.🚚 ОТГ — проброс в главную таблицу) ===
-        // ОТГ ДО БД-ПОДБОРЫ (по бизнес-правилу: БД-подборы — финал, ставится
-        // последней). ОТГ обязателен: если упало — БД не пишем, archive не делаем.
-        // Идемпотентна: повторный finish перезапишет O,P,Q,R,S,T,BC теми же
-        // значениями. retry на 429 встроен в writer (см. sheets-retry.js).
+        // === STEP 4: writeOtgSummary (UPSELLER.🚚 ОТГ — проброс) ===
+        // SKIP для tipOtg='ПЕР' — перемаркировка не идёт через лист отгрузок.
+        // Для отгрузок: row передан из preflight → write без повторного read.
+        // Идемпотентна, retry на 429 встроен в writer.
         const t4 = Date.now();
-        let otg;
-        try {
-          otg = await writeOtgSummary(zayavkaNumber, summary);
-          if (otg.ok) {
-            logEvent('info', 'finish', `${tag} STEP=otg OK row=${otg.row} (${Date.now() - t4}ms)`, { traceId });
-          } else {
-            // not_found: строки на ОТГ нет (менеджер не завёл заявку) — fail-fast,
-            // не пишем БД, не архивируем. Пользователь увидит понятную ошибку
-            // и попросит менеджера завести заявку на ОТГ.
-            logEvent('error', 'finish', `${tag} STEP=otg FAIL reason=${otg.reason}: ${otg.error}`, { traceId });
-            return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: otg.error, reason: otg.reason, traceId };
+        if (preflight.skipOtg) {
+          logEvent('info', 'finish', `${tag} STEP=otg SKIP (tipOtg=ПЕР, перемаркировка)`, { traceId });
+        } else {
+          let otg;
+          try {
+            otg = await writeOtgSummary(zayavkaNumber, summary, { row: preflight.otgRow });
+            if (otg.ok) {
+              logEvent('info', 'finish', `${tag} STEP=otg OK row=${otg.row} (${Date.now() - t4}ms)`, { traceId });
+            } else {
+              // not_found пройти не должен (preflight проверил), но guard на edge.
+              logEvent('error', 'finish', `${tag} STEP=otg FAIL reason=${otg.reason}: ${otg.error}`, { traceId });
+              return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: otg.error, reason: otg.reason, traceId };
+            }
+          } catch (e) {
+            logEvent('error', 'finish', `${tag} STEP=otg FAIL: ${e.message}`, { traceId, error: e.message });
+            console.error(`${tag} otg stack:`, e.stack);
+            return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: e.message, traceId };
           }
-        } catch (e) {
-          logEvent('error', 'finish', `${tag} STEP=otg FAIL: ${e.message}`, { traceId, error: e.message });
-          console.error(`${tag} otg stack:`, e.stack);
-          return { ok: false, type: atom.type, mode: 'full', step: 'otg', error: e.message, traceId };
         }
 
         // === STEP 5: writeFinishSummary (БД ПОДБОРЫ — финальная отметка СОБРАНО) ===
         // Делается ПОСЛЕДНЕЙ из Sheets-операций: U/V становятся 'СОБРАНО'+ts
         // одной batch-записью с W:AJ. После успеха фронт по readZayavkaStatus
-        // увидит СОБРАНО и заблокирует UI. Все предыдущие шаги уже идемпотентны.
+        // увидит СОБРАНО и заблокирует UI. row передан из preflight (без read).
         const t5 = Date.now();
         let r;
         try {
-          r = await writeFinishSummary(zayavkaNumber, summary);
+          r = await writeFinishSummary(zayavkaNumber, summary, { row: preflight.bdRow });
           logEvent('info', 'finish', `${tag} STEP=summary OK ok=${r.ok} reason=${r.reason || '-'} (${Date.now() - t5}ms)`, { traceId });
         } catch (e) {
           logEvent('error', 'finish', `${tag} STEP=summary FAIL: ${e.message}`, { traceId, error: e.message });

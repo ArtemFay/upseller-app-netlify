@@ -45,8 +45,10 @@ export async function findRowOnOtg(zayavkaNumber) {
   return null;
 }
 
-export async function writeOtgSummary(zayavkaNumber, summary) {
-  const row = await findRowOnOtg(zayavkaNumber);
+// opts.row — если уже найден в preflight, передаётся сюда чтобы не делать
+// повторный Sheets-read (экономия квоты).
+export async function writeOtgSummary(zayavkaNumber, summary, opts = {}) {
+  const row = opts.row || await findRowOnOtg(zayavkaNumber);
   if (!row) {
     logEvent('warn', 'sheet', `ОТГ: заявка ${zayavkaNumber} не найдена в листе 🚚 ОТГ (колонка ${KEY_COL})`, null);
     return {

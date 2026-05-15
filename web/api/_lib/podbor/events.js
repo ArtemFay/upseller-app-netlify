@@ -97,12 +97,13 @@ function applySideEffects(state, ev) {
 }
 
 // Обновить мета-поля заявки (warehouse, finalWarehouse, dateOtgr, ks, mp, client,
-// request items) — вызывается с фронт-сайд контекстом при первой записи атома.
+// type, request items) — вызывается с фронт-сайд контекстом при первой записи атома.
 export async function updateMeta(zayavkaId, metaPatch = {}) {
   if (!zayavkaId) return;
   await getOrInit(zayavkaId, {});
   return transact(zayavkaId, state => {
-    for (const key of ['client', 'mp', 'ks', 'warehouse', 'finalWarehouse', 'dateOtgr']) {
+    // type ('ОТГ' / 'ПЕР') нужен при finish — для перемаркировки skip ОТГ-step.
+    for (const key of ['client', 'mp', 'ks', 'warehouse', 'finalWarehouse', 'dateOtgr', 'type']) {
       if (metaPatch[key] !== undefined && metaPatch[key] !== null && metaPatch[key] !== '') {
         state.meta[key] = metaPatch[key];
       }

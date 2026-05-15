@@ -3036,7 +3036,15 @@ function renderPicklogModal(modal, data, z) {
   modal.querySelector('[data-close]').onclick = () => modal.classList.add('hidden');
 }
 
+// Re-entrancy guard: если finish уже идёт (POST /api/podbor/sync с zayavka.finish
+// в полёте) — игнорируем повторные клики. Без этого пользователь, нервничающий
+// от долгого ответа, нажимал «Завершить» 3-5 раз подряд → 5 одновременных
+// finish-pipelines → выбивали Sheets-квоту, в логах дубли событий, ошибки
+// "Сервер не отвечает". Кнопка дополнительно дисейблится визуально.
+let _finishInProgress = false;
+
 async function attemptFinish() {
+  if (_finishInProgress) return; // повторный клик во время finish — no-op
   const z = state.activeZayavka;
   if (!z) return;
   const { matched, mismatches } = checkFinishMatch();
@@ -3048,6 +3056,14 @@ async function attemptFinish() {
   }
   // Несоответствие — показываем модалку выбора full/partial.
   showFinishConflictModal(mismatches);
+}
+
+function setFinishBtnDisabled(disabled) {
+  const btn = document.getElementById('btnFinishZayavka');
+  if (btn) {
+    btn.disabled = disabled;
+    btn.classList.toggle('zb-btn-busy', disabled);
+  }
 }
 
 function showFinishConflictModal(mismatches) {
@@ -3273,6 +3289,9 @@ async function finalizeZayavka(mode, note, overlay) {
     overlay.innerHTML = '';
     return;
   }
+  // Re-entrancy guard: ставим флаг + дисейблим кнопку. Снимаем в finally.
+  _finishInProgress = true;
+  setFinishBtnDisabled(true);
   try {
     const fetchPromise = fetch('/api/podbor/sync', {
       method: 'POST',
@@ -3304,6 +3323,11 @@ async function finalizeZayavka(mode, note, overlay) {
       ok: false,
       message: `Ошибка завершения: ${e.message}`,
     });
+  } finally {
+    // Снимаем guard. На success — заявка уйдёт в backToStart (кнопка пропадёт
+    // вместе с экраном). На fail — кнопка снова доступна, юзер может повторить.
+    _finishInProgress = false;
+    setFinishBtnDisabled(false);
   }
 }
 
