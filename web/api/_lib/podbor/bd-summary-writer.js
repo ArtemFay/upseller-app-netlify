@@ -51,7 +51,9 @@ function fmtScriptDuration(ms) {
 }
 
 // Найти строку заявки в БД (та же логика что bd-writer.findRowByZayavkaNumber).
-async function findRowByZayavkaNumber(zayavkaNumber) {
+// Экспортируется для pre-flight проверки в runtime.js — поймать «нет строки в БД»
+// до записи КОРОБ/НАЧ, чтобы повторный finish не падал на середине пайплайна.
+export async function findRowByZayavkaNumber(zayavkaNumber) {
   const sheets = getSheets();
   const id = getPodborySpreadsheetId();
   const r = await sheets.spreadsheets.values.get({

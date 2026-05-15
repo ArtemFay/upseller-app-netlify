@@ -35,6 +35,9 @@ import podborArchiveDetail from '../web/api/podbor-archive-detail.js';
 import receivingSupplies from '../web/api/receiving-supplies.js';
 import receivingBootstrap from '../web/api/receiving-bootstrap.js';
 import { startScheduler as startPodborScheduler } from '../web/api/_lib/podbor/sync-engine.js';
+import { validateEnv } from './env-validator.js';
+
+validateEnv();
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';

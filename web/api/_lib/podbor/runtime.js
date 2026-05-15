@@ -5,8 +5,10 @@ import { markInProgress, markFinished, markPartial, markClosed, readZayavkaStatu
 import { appendEvent, updateMeta } from './events.js';
 import { loadActiveZayavki } from './zayavki.js';
 import { writeNachToSheet } from './nach-writer.js';
-import { buildFinishSummary, writeFinishSummary } from './bd-summary-writer.js';
+import { buildFinishSummary, writeFinishSummary, findRowByZayavkaNumber } from './bd-summary-writer.js';
 import { readState, archive, transact } from './zayavka-store.js';
+import { getKorobySpreadsheetId, getPodborySpreadsheetId, getNachislenyaSpreadsheetId } from './spreadsheet-id.js';
+import { logEvent } from './sync-log.js';
 
 const boxLayoutStore = new Map();
 const shipBoxStore = new Map();
@@ -583,70 +585,120 @@ export async function applyPodborAtom(atom, ctx) {
       const { zayavkaNumber, mode } = atom;
       if (!zayavkaNumber) return { ok: false, error: 'zayavka.finish requires { zayavkaNumber }' };
       const finishMode = mode === 'partial' ? 'partial' : 'full';
+      // Короткий trace-id привязывает все логи одной попытки finish — `grep <id>` в pm2.
+      const traceId = Math.random().toString(36).slice(2, 8);
+      const tag = `[finish:${traceId}] ${zayavkaNumber}`;
       try {
-        await appendEvent(zayavkaNumber, {
-          type: 'zayavka.finish', by: ctx.user, payload: { mode: finishMode },
-        });
         if (finishMode === 'partial') {
+          await appendEvent(zayavkaNumber, {
+            type: 'zayavka.finish', by: ctx.user, payload: { mode: 'partial' },
+          });
           const r = await markPartial(zayavkaNumber);
           return { ok: r.ok, type: atom.type, mode: 'partial', ...r };
         }
         // mode='full' — атомарный финиш:
+        //   0. PRE-FLIGHT: ENV-резолверы + state-файл + строка в БД ДО записей.
+        //      Ловит ~95% реальных причин падения (забытый ENV, нет строки в БД,
+        //      auth-проблема Sheets) ДО первой записи. Оставшиеся 5% (квота
+        //      посреди batch'а, сетевой обрыв) закрываются идемпотентностью
+        //      повторного finish: КОРОБЫ — фильтр по 'В СБОРКЕ' (no-op после
+        //      успеха), НАЧ — guard `already_written` по zayavkaId, summary —
+        //      перезапись теми же значениями.
         //   1. mass transition В СБОРКЕ → СОБРАНО на листе КОРОБЫ.
         //   2. append строк начислений в лист НАЧ (из event-store).
         //   3. writeFinishSummary (БД row U,V + W:AJ summary one-batch).
         //   4. archive state-файла в _done/.
-        // Если любой шаг упал — НЕ делаем archive, статус не СОБРАНО,
-        // повторный finish воспроизведёт пайплайн с тем же state.
+        // Если любой шаг упал — state-файл и КОРОБЫ остаются в текущем виде,
+        // повторный finish дочистит пайплайн.
+
+        // === STEP 0: pre-flight ===
+        logEvent('info', 'finish', `${tag} STEP=preflight START (mode=full, by=${ctx.user || '-'})`, { traceId, zayavkaNumber });
+        const preflight = {};
+        try {
+          preflight.korobyId = getKorobySpreadsheetId();
+          preflight.podboryId = getPodborySpreadsheetId();
+          preflight.nachId = getNachislenyaSpreadsheetId();
+          preflight.state = await readState(zayavkaNumber);
+          if (!preflight.state) throw new Error(`state-файл не найден для ${zayavkaNumber} (zayavki/<id>.json)`);
+          preflight.bdRow = await findRowByZayavkaNumber(zayavkaNumber);
+          if (!preflight.bdRow) throw new Error(`заявка ${zayavkaNumber} не найдена в листе ПОДБОРЫ.БД (колонка F)`);
+        } catch (e) {
+          logEvent('error', 'finish', `${tag} STEP=preflight FAIL: ${e.message}`, { traceId, zayavkaNumber, error: e.message });
+          console.error(`${tag} preflight stack:`, e.stack);
+          return { ok: false, type: atom.type, mode: 'full', step: 'preflight', error: e.message, traceId };
+        }
+        logEvent('info', 'finish', `${tag} STEP=preflight OK (bdRow=${preflight.bdRow}, state=loaded)`, { traceId });
+
+        // appendEvent ПОСЛЕ preflight: если pre-flight упал — не плодим дубли в event-store.
+        await appendEvent(zayavkaNumber, {
+          type: 'zayavka.finish', by: ctx.user, payload: { mode: 'full', traceId },
+        });
+
         const scriptStartedAt = Date.now();
         const t0 = Date.now();
-        // Pipeline distributes work to THREE different spreadsheets, so independent
-        // calls run in parallel — Promise.all reduces total wall-time from
-        // sum(steps) ≈ 60s sequential to max(step) ≈ 5-8s parallel.
-        //
-        //   - finishZayavkaFull → UPSELLER (🍬 КОРОБЫ): mass-status transition
-        //   - writeNachToSheet  → ПОДБОРЫ (НАЧ): append payroll rows (idempotent)
-        //   - finalState (read) → local file (instant)
-        //
-        // writeFinishSummary runs AFTER all three resolve because it needs
-        // transitioned/nachWritten/finalState in the BD summary payload. It
-        // writes to ПОДБОРЫ (БД) — same spreadsheet as NACH but different sheet.
-        const [t, nachRes, finalState] = await Promise.all([
-          finishZayavkaFull(zayavkaNumber).then(r => {
-            console.log(`[finish:perf] ${zayavkaNumber} finishZayavkaFull: ${Date.now() - t0}ms (transitioned=${r.transitioned})`);
-            return r;
-          }),
-          writeNachToSheet(zayavkaNumber).then(r => {
-            console.log(`[finish:perf] ${zayavkaNumber} writeNachToSheet: ${Date.now() - t0}ms (written=${r.written}, skipped=${r.skipped || false})`);
-            return r;
-          }),
-          readState(zayavkaNumber).then(r => {
-            console.log(`[finish:perf] ${zayavkaNumber} readState: ${Date.now() - t0}ms`);
-            return r;
-          }),
-        ]);
+        // === STEPS 1-2-3 параллельно (3 разных spreadsheets) ===
+        // Каждый .then логирует STEP=N OK / .catch ловит indiv. ошибку для шагового
+        // лога — но Promise.all всё равно бросит на первый rejection (это ок:
+        // другие шаги уже либо выполнены, либо в полёте, идемпотентны при retry).
+        logEvent('info', 'finish', `${tag} STEP=parallel START (koroby + nach + readState)`, { traceId });
+        let t, nachRes, finalState;
+        try {
+          [t, nachRes, finalState] = await Promise.all([
+            finishZayavkaFull(zayavkaNumber).then(r => {
+              logEvent('info', 'finish', `${tag} STEP=koroby OK transitioned=${r.transitioned} (${Date.now() - t0}ms)`, { traceId });
+              return r;
+            }, e => {
+              logEvent('error', 'finish', `${tag} STEP=koroby FAIL: ${e.message}`, { traceId, error: e.message });
+              throw Object.assign(e, { step: 'koroby' });
+            }),
+            writeNachToSheet(zayavkaNumber).then(r => {
+              const skipNote = r.skipped ? ` skipped=${r.reason}` : '';
+              logEvent('info', 'finish', `${tag} STEP=nach OK written=${r.written}${skipNote} (${Date.now() - t0}ms)`, { traceId });
+              return r;
+            }, e => {
+              logEvent('error', 'finish', `${tag} STEP=nach FAIL: ${e.message}`, { traceId, error: e.message });
+              throw Object.assign(e, { step: 'nach' });
+            }),
+            readState(zayavkaNumber).then(r => r, e => {
+              logEvent('error', 'finish', `${tag} STEP=readState FAIL: ${e.message}`, { traceId, error: e.message });
+              throw Object.assign(e, { step: 'readState' });
+            }),
+          ]);
+        } catch (e) {
+          console.error(`${tag} parallel stack:`, e.stack);
+          return { ok: false, type: atom.type, mode: 'full', step: e.step || 'parallel', error: e.message, traceId };
+        }
+
+        // === STEP 4: writeFinishSummary (после parallel — нужен transitioned/nachWritten) ===
         const summary = buildFinishSummary(finalState, {
           transitioned: t.transitioned,
           nachWritten: nachRes.written,
           scriptStartedAt,
         });
         const t3 = Date.now();
-        const r = await writeFinishSummary(zayavkaNumber, summary);
-        console.log(`[finish:perf] ${zayavkaNumber} writeFinishSummary: ${Date.now() - t3}ms (ok=${r.ok}, reason=${r.reason || '-'})`);
-        console.log(`[finish:perf] ${zayavkaNumber} TOTAL: ${Date.now() - t0}ms (parallel pipeline)`);
-        // archive ТОЛЬКО при полном успехе. Если writeFinishSummary вернул
-        // ok:false (например not_found в БД-листе), state-файл оставляем в
-        // zayavki/ — иначе мы теряем pickedByBarcode/events заявки, а пользователь
-        // при «Продолжить» получает пустую заявку.
+        let r;
+        try {
+          r = await writeFinishSummary(zayavkaNumber, summary);
+          logEvent('info', 'finish', `${tag} STEP=summary OK ok=${r.ok} reason=${r.reason || '-'} (${Date.now() - t3}ms)`, { traceId });
+        } catch (e) {
+          logEvent('error', 'finish', `${tag} STEP=summary FAIL: ${e.message}`, { traceId, error: e.message });
+          console.error(`${tag} summary stack:`, e.stack);
+          return { ok: false, type: atom.type, mode: 'full', step: 'summary', error: e.message, traceId };
+        }
+
+        // === STEP 5: archive (только при полном успехе summary) ===
         if (r.ok) {
           try {
             if (finalState) await archive(zayavkaNumber, finalState);
+            logEvent('info', 'finish', `${tag} STEP=archive OK`, { traceId });
           } catch (e) {
-            console.error('[podbor:archive]', zayavkaNumber, e.message);
+            logEvent('warn', 'finish', `${tag} STEP=archive FAIL (non-fatal): ${e.message}`, { traceId, error: e.message });
+            console.error(`${tag} archive stack:`, e.stack);
           }
         }
+        logEvent('info', 'finish', `${tag} TOTAL ${Date.now() - t0}ms ok=${r.ok}`, { traceId });
         return {
-          ok: r.ok, type: atom.type, mode: 'full',
+          ok: r.ok, type: atom.type, mode: 'full', traceId,
           transitioned: t.transitioned,
           nachWritten: nachRes.written,
           totalCharge: nachRes.totalCharge,
@@ -660,7 +712,10 @@ export async function applyPodborAtom(atom, ctx) {
           ...r,
         };
       } catch (e) {
-        return { ok: false, type: atom.type, error: e.message };
+        // Outer safety net: всё что не поймали step-локальные catch'и.
+        logEvent('error', 'finish', `${tag} UNHANDLED: ${e.message}`, { traceId, zayavkaNumber, error: e.message });
+        console.error(`${tag} unhandled stack:`, e.stack);
+        return { ok: false, type: atom.type, error: e.message, traceId };
       }
     }
     case 'zayavka.partial_close': {
