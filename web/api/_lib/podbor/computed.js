@@ -29,9 +29,15 @@ export function recompute(state) {
   // это absolute slot value, не дельта. Иначе при многократном редактировании
   // одного и того же слота (kolPodb 5 → 8) computed выходит 13 а не 8.
   const setLayoutLast = {}; // src → bar → { podb, perem, kudaPodb }
-  // fullToShipCum: для full_to_ship — кумулятивный qty per (source, bar), т.к.
-  // это «целиком всё что осталось», и может теоретически фиксироваться повторно.
-  const fullToShipCum = {}; // src → bar → qty
+  // fullToShipLast: для full_to_ship — ПОСЛЕДНЕЕ значение qty per (source, bar).
+  // ABSOLUTE, а не кумулятив. Семантика: «забрать источник целиком» — повторное
+  // применение к тому же source = повторное считывание актуального содержимого
+  // (snapshot из КОРОБОВ-листа), не дельта. До 2026-05-15 был CUMULATIVE: при
+  // повторном full_to_ship на тот же short (например, оператор случайно нажал
+  // дважды или Sheets refresh показал восстановленное содержимое) qty задваивался
+  // → pickedByBarcode выходил больше реального (заявка S1607-Чубин: 2050 при
+  // плане 1975 — 7 источников взяты дважды).
+  const fullToShipLast = {}; // src → bar → qty
   const fullToShipDst = {}; // src → newKorob
 
   function getSource(src) {
@@ -74,14 +80,15 @@ export function recompute(state) {
         srcInfo.fullToShipSeen = true;
         const newKorob = String(ev.newKorob || src);
         fullToShipDst[src] = newKorob;
-        if (!fullToShipCum[src]) fullToShipCum[src] = {};
+        // ABSOLUTE per (src, bar): каждый full_to_ship перезаписывает qty
+        // (а не суммирует). Очищаем предыдущие баркоды этого source, если
+        // они отсутствуют в текущем event'е (источник опустошился).
+        fullToShipLast[src] = {};
         for (const item of ev.items) {
           const barcode = String(item.barcode || '').trim();
           if (!barcode) continue;
           const qty = Number(item.qty) || 0;
-          if (qty > 0) {
-            fullToShipCum[src][barcode] = (fullToShipCum[src][barcode] || 0) + qty;
-          }
+          if (qty > 0) fullToShipLast[src][barcode] = qty;
         }
         break;
       }
@@ -109,11 +116,12 @@ export function recompute(state) {
       }
       if (slot.perem > 0) info.toCell[bar] = (info.toCell[bar] || 0) + slot.perem;
     }
-    // 2) full_to_ship — кумулятивный qty (теоретически может фиксироваться повторно;
-    //    обычно один раз per source).
-    const cum = fullToShipCum[src] || {};
+    // 2) full_to_ship — ABSOLUTE последний qty (см. fullToShipLast). Повторное
+    //    full_to_ship на тот же source = переснятие актуального содержимого,
+    //    не дельта.
+    const lastFts = fullToShipLast[src] || {};
     const dst = fullToShipDst[src] || src;
-    for (const [bar, qty] of Object.entries(cum)) {
+    for (const [bar, qty] of Object.entries(lastFts)) {
       if (qty > 0) {
         info.shipped[bar] = (info.shipped[bar] || 0) + qty;
         pickedByBarcode[bar] = (pickedByBarcode[bar] || 0) + qty;
